@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find \"c:\\\\Users\\\\Prueba\\\\Desktop\\\\proyecto\\\\carpetaflutter\\\\flutter_windows_3.44.8-stable\" -maxdepth 1 | sort)",
+      "Read(//c/Users/Prueba/Desktop/proyecto/carpetaflutter/flutter_windows_3.44.8-stable/**)",
+      "Read(//c/Users/Prueba/Desktop/proyecto/carpetaflutter/**)",
+      "Read(//c/Users/Prueba/Desktop/**)",
+      "Read(//c/Users/Prueba/Downloads/**)"
+    ]
+  }
+}

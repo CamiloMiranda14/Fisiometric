@@ -1,0 +1,39 @@
+name: fisiometric
+description: "Fisiometric: medicion de angulos articulares por vision artificial para fisioterapia."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  camera: ^0.12.0+2
+  excel: ^4.0.6
+  flutter:
+    sdk: flutter
+  flutter_pose_detection: ^0.4.1
+  flutter_quick_video_encoder: ^1.7.2
+  path_provider: ^2.1.6
+  permission_handler: ^13.0.0
+  share_plus: ^13.3.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+
+# permission_handler_android 14.0.0 solo cambió su compileSdk de 35 a 37 (sin
+# cambios de API — ver su CHANGELOG), pero el SDK 37 "plano" (sin sufijo de
+# versión menor) no está disponible en este equipo, solo 37.0. Se fija a
+# 13.0.1 (última versión publicada que compila contra SDK 35, ya instalado;
+# 13.0.2 aparece en el CHANGELOG pero nunca se publicó en pub.dev) hasta que
+# el toolchain de Android SDK / Gradle se ponga al día con el nuevo esquema
+# de versionado mayor.menor.
+dependency_overrides:
+  permission_handler_android: 13.0.1
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/icon/
