@@ -20,6 +20,7 @@ class SessionListTile extends StatelessWidget {
     final modeLabel = metadata.mode == RecordingMode.clean
         ? 'Video limpio'
         : 'Overlay quemado';
+    final viewLabel = metadata.view.label;
 
     return ListTile(
       leading: CircleAvatar(
@@ -32,7 +33,9 @@ class SessionListTile extends StatelessWidget {
         ),
       ),
       title: Text(dateLabel),
-      subtitle: Text('$durationLabel · ${metadata.sampleCount} muestras · $modeLabel'),
+      subtitle: Text(
+        '$durationLabel · ${metadata.sampleCount} muestras · $modeLabel · $viewLabel',
+      ),
       trailing: const Icon(Icons.chevron_right),
       onTap: onTap,
     );

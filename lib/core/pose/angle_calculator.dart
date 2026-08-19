@@ -133,6 +133,59 @@ const List<JointDefinition> jointDefinitions = [
   ),
 ];
 
+/// Identifica cada uno de los 4 pares contralaterales medidos por la app.
+enum SymmetricJointPair { hombro, codo, muneca, rodilla }
+
+/// Define un par de articulaciones (izq/der) para el cálculo de simetría
+/// bilateral, más la etiqueta y columna (snake_case) a usar en HUD/export.
+class SymmetricPairDefinition {
+  const SymmetricPairDefinition({
+    required this.pair,
+    required this.izq,
+    required this.der,
+    required this.label,
+    required this.csvColumn,
+  });
+
+  final SymmetricJointPair pair;
+  final JointKind izq;
+  final JointKind der;
+  final String label;
+  final String csvColumn;
+}
+
+/// Los 4 pares contralaterales, en el mismo orden que sus filas en el HUD.
+const List<SymmetricPairDefinition> symmetricJointPairs = [
+  SymmetricPairDefinition(
+    pair: SymmetricJointPair.hombro,
+    izq: JointKind.hombroIzq,
+    der: JointKind.hombroDer,
+    label: 'Hombro',
+    csvColumn: 'hombro',
+  ),
+  SymmetricPairDefinition(
+    pair: SymmetricJointPair.codo,
+    izq: JointKind.codoIzq,
+    der: JointKind.codoDer,
+    label: 'Codo',
+    csvColumn: 'codo',
+  ),
+  SymmetricPairDefinition(
+    pair: SymmetricJointPair.muneca,
+    izq: JointKind.munecaIzq,
+    der: JointKind.munecaDer,
+    label: 'Muñeca',
+    csvColumn: 'muneca',
+  ),
+  SymmetricPairDefinition(
+    pair: SymmetricJointPair.rodilla,
+    izq: JointKind.rodillaIzq,
+    der: JointKind.rodillaDer,
+    label: 'Rodilla',
+    csvColumn: 'rodilla',
+  ),
+];
+
 /// Pares de landmarks a dibujar como "huesos" del esqueleto. Incluye más
 /// segmentos que los estrictamente necesarios para los ángulos (p.ej.
 /// hombro-hombro, cadera-cadera) para que la figura sea reconocible.

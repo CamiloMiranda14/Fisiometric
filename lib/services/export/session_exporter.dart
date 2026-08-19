@@ -4,6 +4,7 @@ import 'package:excel/excel.dart';
 
 import '../../core/errors/app_exceptions.dart';
 import '../../core/pose/angle_calculator.dart';
+import '../../core/pose/body_view.dart';
 import '../../models/angle_sample.dart';
 
 /// Escribe los datos de ángulos de una sesión en CSV y en .xlsx.
@@ -11,23 +12,42 @@ import '../../models/angle_sample.dart';
 /// El CSV se arma a mano (sin el paquete `csv`): los datos son 100%
 /// numéricos, sin comas ni saltos de línea que escapar, así que una
 /// librería no aporta nada aquí y es una dependencia menos.
+///
+/// Las columnas dependen de la vista de la sesión: en `izquierda`/`derecha`
+/// solo se incluyen las articulaciones de ese lado (y no hay columnas de
+/// simetría, que solo tiene sentido en `frontal`) — ver `BodyView`.
 class SessionExporter {
   const SessionExporter();
 
-  static const List<String> _headers = [
+  List<JointDefinition> _activeDefs(BodyView view) =>
+      jointDefinitions.where((d) => isJointActiveForView(d.kind, view)).toList();
+
+  List<String> _headers(BodyView view, List<JointDefinition> activeDefs) => [
     'tiempo_ms',
     'frame',
-    ...['hombro_izq', 'hombro_der', 'codo_izq', 'codo_der', 'muneca_izq', 'muneca_der', 'rodilla_izq', 'rodilla_der'],
+    for (final def in activeDefs) def.csvColumn,
+    for (final def in activeDefs) 'vel_${def.csvColumn}',
+    if (view == BodyView.frontal)
+      for (final pair in symmetricJointPairs) 'sim_${pair.csvColumn}',
   ];
 
-  Future<File> writeCsv(String path, List<AngleSample> samples) async {
-    final buffer = StringBuffer()..writeln(_headers.join(','));
+  Future<File> writeCsv(
+    String path,
+    List<AngleSample> samples,
+    BodyView view,
+  ) async {
+    final activeDefs = _activeDefs(view);
+    final buffer = StringBuffer()..writeln(_headers(view, activeDefs).join(','));
     for (final sample in samples) {
       final cells = <String>[
         '${sample.timestampMs}',
         '${sample.frameIndex}',
-        for (final value in sample.angles.asOrderedList)
-          value == null ? '' : value.toStringAsFixed(1),
+        for (final def in activeDefs) _formatCell(sample.angles.forJoint(def.kind)),
+        for (final def in activeDefs)
+          _formatCell(sample.velocity.forJoint(def.kind)),
+        if (view == BodyView.frontal)
+          for (final pair in symmetricJointPairs)
+            _formatCell(sample.symmetry.forPair(pair.pair)),
       ];
       buffer.writeln(cells.join(','));
     }
@@ -41,7 +61,15 @@ class SessionExporter {
     }
   }
 
-  Future<File> writeXlsx(String path, List<AngleSample> samples) async {
+  String _formatCell(double? value) =>
+      value == null ? '' : value.toStringAsFixed(1);
+
+  Future<File> writeXlsx(
+    String path,
+    List<AngleSample> samples,
+    BodyView view,
+  ) async {
+    final activeDefs = _activeDefs(view);
     final workbook = Excel.createExcel();
     const sheetName = 'Ángulos';
     final sheet = workbook[sheetName];
@@ -51,13 +79,18 @@ class SessionExporter {
       if (existing != sheetName) workbook.delete(existing);
     }
 
-    sheet.appendRow(_headers.map(TextCellValue.new).toList());
+    sheet.appendRow(_headers(view, activeDefs).map(TextCellValue.new).toList());
     for (final sample in samples) {
       sheet.appendRow([
         IntCellValue(sample.timestampMs),
         IntCellValue(sample.frameIndex),
-        for (final value in sample.angles.asOrderedList)
-          value == null ? null : DoubleCellValue(value),
+        for (final def in activeDefs)
+          _cellValue(sample.angles.forJoint(def.kind)),
+        for (final def in activeDefs)
+          _cellValue(sample.velocity.forJoint(def.kind)),
+        if (view == BodyView.frontal)
+          for (final pair in symmetricJointPairs)
+            _cellValue(sample.symmetry.forPair(pair.pair)),
       ]);
     }
 
@@ -74,6 +107,9 @@ class SessionExporter {
       throw ExportException('No se pudo escribir el .xlsx: $e');
     }
   }
+
+  DoubleCellValue? _cellValue(double? value) =>
+      value == null ? null : DoubleCellValue(value);
 
   /// Mín/máx/promedio por articulación, para `session.json` — ver
   /// SessionMetadata. Una articulación sin ninguna muestra válida en toda

@@ -15,6 +15,7 @@ import 'controllers/clean_video_recorder.dart';
 import 'controllers/measurement_controller.dart';
 import 'controllers/overlay_video_recorder.dart';
 import 'widgets/angle_hud_panel.dart';
+import 'widgets/body_view_toggle.dart';
 import 'widgets/permission_gate.dart';
 import 'widgets/record_button.dart';
 import 'widgets/recording_mode_toggle.dart';
@@ -220,14 +221,16 @@ class _CameraViewState extends State<_CameraView> with WidgetsBindingObserver {
     final samples = _measurementController.endRecordingSession();
     final durationMs = samples.isEmpty ? 0 : samples.last.timestampMs;
 
-    await _exporter.writeCsv('${dir.path}/datos.csv', samples);
-    await _exporter.writeXlsx('${dir.path}/datos.xlsx', samples);
+    final view = _measurementController.view;
+    await _exporter.writeCsv('${dir.path}/datos.csv', samples, view);
+    await _exporter.writeXlsx('${dir.path}/datos.xlsx', samples, view);
 
     final rawStats = _exporter.computeJointStats(samples);
     final metadata = SessionMetadata(
       id: _sessionId!,
       startedAt: _sessionStartedAt!,
       mode: _measurementController.mode,
+      view: view,
       durationMs: durationMs,
       sampleCount: samples.length,
       jointStats: rawStats.map(
@@ -328,8 +331,12 @@ class _MeasureStack extends StatelessWidget {
           right: 16,
           child: AnimatedBuilder(
             animation: measurementController,
-            builder: (context, _) =>
-                AngleHudPanel(angles: measurementController.latestAngles),
+            builder: (context, _) => AngleHudPanel(
+              angles: measurementController.latestAngles,
+              velocity: measurementController.latestVelocity,
+              symmetry: measurementController.latestSymmetry,
+              view: measurementController.view,
+            ),
           ),
         ),
         Positioned(
@@ -339,6 +346,15 @@ class _MeasureStack extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              AnimatedBuilder(
+                animation: measurementController,
+                builder: (context, _) => BodyViewToggle(
+                  view: measurementController.view,
+                  locked: recordState != RecordButtonState.idle,
+                  onChanged: (newView) => measurementController.view = newView,
+                ),
+              ),
+              const SizedBox(height: 8),
               AnimatedBuilder(
                 animation: measurementController,
                 builder: (context, _) => RecordingModeToggle(

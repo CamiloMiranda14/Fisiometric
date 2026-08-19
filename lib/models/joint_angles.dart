@@ -1,4 +1,5 @@
 import '../core/pose/angle_calculator.dart';
+import '../core/pose/body_view.dart';
 import 'pose_frame.dart';
 
 /// Los 8 ángulos articulares medidos en un instante, en grados.
@@ -69,6 +70,26 @@ class JointAngles {
     rodillaIzq,
     rodillaDer,
   ];
+
+  /// Anula (pone en `null`) los ángulos del lado no activo en [view]. En
+  /// `BodyView.frontal` retorna `this` sin cambios.
+  JointAngles filterForView(BodyView view) {
+    if (view == BodyView.frontal) return this;
+
+    double? keepIfActive(JointKind kind, double? value) =>
+        isJointActiveForView(kind, view) ? value : null;
+
+    return JointAngles(
+      hombroIzq: keepIfActive(JointKind.hombroIzq, hombroIzq),
+      hombroDer: keepIfActive(JointKind.hombroDer, hombroDer),
+      codoIzq: keepIfActive(JointKind.codoIzq, codoIzq),
+      codoDer: keepIfActive(JointKind.codoDer, codoDer),
+      munecaIzq: keepIfActive(JointKind.munecaIzq, munecaIzq),
+      munecaDer: keepIfActive(JointKind.munecaDer, munecaDer),
+      rodillaIzq: keepIfActive(JointKind.rodillaIzq, rodillaIzq),
+      rodillaDer: keepIfActive(JointKind.rodillaDer, rodillaDer),
+    );
+  }
 
   factory JointAngles.fromPoseFrame(PoseFrame frame) {
     if (!frame.hasPose) return empty;

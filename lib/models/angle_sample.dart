@@ -1,14 +1,19 @@
+import 'bilateral_symmetry.dart';
 import 'joint_angles.dart';
+import 'joint_angular_velocity.dart';
 
-/// Una fila de datos: los 8 ángulos articulares en un instante durante una
-/// grabación. Se agrega una muestra por frame procesado, incondicionalmente
-/// (incluso con todos los ángulos en `null`), para no dejar huecos
-/// irregulares en la serie de tiempo exportada.
+/// Una fila de datos: los 8 ángulos articulares, su velocidad angular y la
+/// simetría bilateral en un instante durante una grabación. Se agrega una
+/// muestra por frame procesado, incondicionalmente (incluso con todos los
+/// valores en `null`), para no dejar huecos irregulares en la serie de
+/// tiempo exportada.
 class AngleSample {
   const AngleSample({
     required this.timestampMs,
     required this.frameIndex,
     required this.angles,
+    required this.velocity,
+    required this.symmetry,
   });
 
   /// Milisegundos desde que empezó la grabación (no desde epoch) — es la
@@ -21,4 +26,12 @@ class AngleSample {
   final int frameIndex;
 
   final JointAngles angles;
+
+  /// Velocidad angular en °/s. `JointAngularVelocity.empty` si no hubo
+  /// frame anterior válido.
+  final JointAngularVelocity velocity;
+
+  /// Simetría bilateral (%). Siempre `BilateralSymmetry.empty` fuera de
+  /// `BodyView.frontal`.
+  final BilateralSymmetry symmetry;
 }

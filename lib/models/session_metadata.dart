@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../core/pose/body_view.dart';
 import 'recording_mode.dart';
 
 /// Mínimo, máximo y promedio de una articulación a lo largo de una sesión.
@@ -28,6 +29,7 @@ class SessionMetadata {
     required this.id,
     required this.startedAt,
     required this.mode,
+    required this.view,
     required this.durationMs,
     required this.sampleCount,
     required this.jointStats,
@@ -37,6 +39,7 @@ class SessionMetadata {
   final String id;
   final DateTime startedAt;
   final RecordingMode mode;
+  final BodyView view;
   final int durationMs;
   final int sampleCount;
 
@@ -51,6 +54,7 @@ class SessionMetadata {
     'id': id,
     'startedAt': startedAt.toIso8601String(),
     'mode': mode.name,
+    'view': view.name,
     'durationMs': durationMs,
     'sampleCount': sampleCount,
     'jointStats': jointStats.map((k, v) => MapEntry(k, v.toJson())),
@@ -63,6 +67,12 @@ class SessionMetadata {
       id: json['id'] as String,
       startedAt: DateTime.parse(json['startedAt'] as String),
       mode: RecordingMode.values.byName(json['mode'] as String),
+      // Sesiones grabadas antes de agregar la selección de vista no tienen
+      // esta clave — se asumen vista frontal (equivalente al comportamiento
+      // sin filtrar que tenía la app entonces).
+      view: BodyView.values.byName(
+        json['view'] as String? ?? BodyView.frontal.name,
+      ),
       durationMs: json['durationMs'] as int,
       sampleCount: json['sampleCount'] as int,
       jointStats: rawStats.map(

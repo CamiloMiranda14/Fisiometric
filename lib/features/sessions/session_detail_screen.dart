@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../core/pose/angle_calculator.dart';
+import '../../core/pose/body_view.dart';
 import '../../models/recording_mode.dart';
 import '../../models/session_metadata.dart';
 import '../../services/storage/session_storage_service.dart';
@@ -83,6 +84,7 @@ class SessionDetailScreen extends StatelessWidget {
           ),
           _InfoRow(label: 'Muestras', value: '${metadata.sampleCount}'),
           _InfoRow(label: 'Modo', value: modeLabel),
+          _InfoRow(label: 'Vista', value: metadata.view.label),
           const SizedBox(height: 24),
           Text(
             'Ángulos (mín / prom / máx)',
@@ -90,7 +92,8 @@ class SessionDetailScreen extends StatelessWidget {
           ),
           const Divider(),
           for (final def in jointDefinitions)
-            _JointStatsRow(def: def, stats: metadata.jointStats[def.csvColumn]),
+            if (isJointActiveForView(def.kind, metadata.view))
+              _JointStatsRow(def: def, stats: metadata.jointStats[def.csvColumn]),
         ],
       ),
     );
