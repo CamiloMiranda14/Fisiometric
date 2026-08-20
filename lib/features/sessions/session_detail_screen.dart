@@ -94,6 +94,33 @@ class SessionDetailScreen extends StatelessWidget {
           for (final def in jointDefinitions)
             if (isJointActiveForView(def.kind, metadata.view))
               _JointStatsRow(def: def, stats: metadata.jointStats[def.csvColumn]),
+          const SizedBox(height: 24),
+          Text(
+            'Velocidad angular (promedio)',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const Divider(),
+          for (final def in jointDefinitions)
+            if (isJointActiveForView(def.kind, metadata.view))
+              _AverageRow(
+                label: def.label,
+                value: metadata.velocityStats[def.csvColumn],
+                unit: '°/s',
+              ),
+          if (metadata.view == BodyView.frontal) ...[
+            const SizedBox(height: 24),
+            Text(
+              'Simetría bilateral (promedio SI %)',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const Divider(),
+            for (final pair in symmetricJointPairs)
+              _AverageRow(
+                label: pair.label,
+                value: metadata.symmetryStats[pair.csvColumn],
+                unit: '%',
+              ),
+          ],
         ],
       ),
     );
@@ -115,6 +142,36 @@ class _InfoRow extends StatelessWidget {
         children: [
           Text(label),
           Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
+  }
+}
+
+class _AverageRow extends StatelessWidget {
+  const _AverageRow({required this.label, required this.value, required this.unit});
+
+  final String label;
+  final double? value;
+  final String unit;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = value == null
+        ? 'Sin datos suficientes'
+        : '${value!.toStringAsFixed(1)}$unit';
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label),
+          Text(
+            text,
+            style: TextStyle(
+              color: value == null ? AppColors.lowConfidence : AppColors.darkGrey,
+            ),
+          ),
         ],
       ),
     );

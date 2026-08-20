@@ -133,4 +133,47 @@ class SessionExporter {
     }
     return result;
   }
+
+  /// Promedio de velocidad angular por articulación (°/s), para
+  /// `session.json`. Se promedia el **valor absoluto** de cada muestra, no
+  /// el valor con signo: un ejercicio de ida y vuelta (ej. flexo-extensión)
+  /// tiene velocidad positiva y negativa que se cancelarían cerca de 0 si
+  /// se promediara con signo, dando un número inútil. El valor absoluto
+  /// refleja la "rapidez" típica del movimiento. Articulación sin ninguna
+  /// muestra válida queda fuera del mapa.
+  Map<String, double> computeVelocityStats(List<AngleSample> samples) {
+    final result = <String, double>{};
+    for (final def in jointDefinitions) {
+      final values = samples
+          .map((s) => s.velocity.forJoint(def.kind))
+          .whereType<double>()
+          .map((v) => v.abs())
+          .toList();
+      if (values.isEmpty) continue;
+      result[def.csvColumn] = values.reduce((a, b) => a + b) / values.length;
+    }
+    return result;
+  }
+
+  /// Promedio de simetría bilateral (SI %) por par de articulaciones, para
+  /// `session.json`. Solo tiene datos en `BodyView.frontal` — en
+  /// izquierda/derecha retorna un mapa vacío, ya que no hay con qué
+  /// comparar (ver `computeBilateralSymmetry`).
+  Map<String, double> computeSymmetryStats(
+    List<AngleSample> samples,
+    BodyView view,
+  ) {
+    if (view != BodyView.frontal) return {};
+
+    final result = <String, double>{};
+    for (final pair in symmetricJointPairs) {
+      final values = samples
+          .map((s) => s.symmetry.forPair(pair.pair))
+          .whereType<double>()
+          .toList();
+      if (values.isEmpty) continue;
+      result[pair.csvColumn] = values.reduce((a, b) => a + b) / values.length;
+    }
+    return result;
+  }
 }

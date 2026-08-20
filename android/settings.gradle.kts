@@ -26,7 +26,12 @@ plugins {
     // pulled in transitively by flutter_pose_detection's MediaPipe
     // dependency). AGP 8.x only warns about this instead of failing, so
     // pinned to the latest stable 8.x (supports compileSdk 36) until the
-    // TF Lite artifacts are republished with unique namespaces.
+    // TF Lite artifacts are republished with unique namespaces. Flutter's
+    // own minimum-AGP check now wants 8.11.1+, but that version fails to
+    // resolve in this environment (a local Gradle plugin-resolution issue,
+    // not a real incompatibility — AGP 8.10.0 configures successfully on
+    // its own); bypassed at build time with
+    // --android-skip-build-dependency-validation instead of chasing it.
     id("com.android.application") version "8.10.0" apply false
     id("org.jetbrains.kotlin.android") version "2.3.20" apply false
 }

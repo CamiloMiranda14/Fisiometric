@@ -33,6 +33,8 @@ class SessionMetadata {
     required this.durationMs,
     required this.sampleCount,
     required this.jointStats,
+    required this.velocityStats,
+    required this.symmetryStats,
     required this.videoFileName,
   });
 
@@ -48,6 +50,16 @@ class SessionMetadata {
   /// durante toda la sesión.
   final Map<String, JointStats> jointStats;
 
+  /// Promedio de velocidad angular (°/s, valor absoluto) por articulación —
+  /// ver `SessionExporter.computeVelocityStats`. Clave = `csvColumn`, igual
+  /// que `jointStats`.
+  final Map<String, double> velocityStats;
+
+  /// Promedio de simetría bilateral (SI %) por par de articulaciones — ver
+  /// `SessionExporter.computeSymmetryStats`. Vacío fuera de
+  /// `BodyView.frontal`. Clave = `SymmetricPairDefinition.csvColumn`.
+  final Map<String, double> symmetryStats;
+
   final String videoFileName;
 
   Map<String, dynamic> toJson() => {
@@ -58,6 +70,8 @@ class SessionMetadata {
     'durationMs': durationMs,
     'sampleCount': sampleCount,
     'jointStats': jointStats.map((k, v) => MapEntry(k, v.toJson())),
+    'velocityStats': velocityStats,
+    'symmetryStats': symmetryStats,
     'videoFileName': videoFileName,
   };
 
@@ -78,8 +92,17 @@ class SessionMetadata {
       jointStats: rawStats.map(
         (k, v) => MapEntry(k, JointStats.fromJson(v as Map<String, dynamic>)),
       ),
+      // Sesiones grabadas antes de agregar estos promedios no tienen estas
+      // claves — se asumen vacías (equivalente a "sin datos" en la UI).
+      velocityStats: _readDoubleMap(json['velocityStats']),
+      symmetryStats: _readDoubleMap(json['symmetryStats']),
       videoFileName: json['videoFileName'] as String? ?? 'video.mp4',
     );
+  }
+
+  static Map<String, double> _readDoubleMap(dynamic raw) {
+    final map = raw as Map<String, dynamic>? ?? {};
+    return map.map((k, v) => MapEntry(k, (v as num).toDouble()));
   }
 
   String toJsonString() => const JsonEncoder.withIndent('  ').convert(toJson());

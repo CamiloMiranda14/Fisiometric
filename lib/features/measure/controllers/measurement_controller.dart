@@ -1,8 +1,11 @@
+import 'dart:ui';
+
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../../core/pose/angular_velocity_calculator.dart';
 import '../../../core/pose/body_view.dart';
+import '../../../core/pose/camera_rotation.dart';
 import '../../../core/pose/symmetry_calculator.dart';
 import '../../../models/angle_sample.dart';
 import '../../../models/bilateral_symmetry.dart';
@@ -30,7 +33,26 @@ class MeasurementController extends ChangeNotifier {
   final Stopwatch _recordingStopwatch = Stopwatch();
 
   bool _busyProcessing = false;
-  int _sensorOrientation = 0;
+
+  /// Ángulo (0/90/180/270) que el detector debe aplicar para enderezar la
+  /// imagen del sensor — se fija una vez, al iniciar la cámara (ver
+  /// CameraDescription.sensorOrientation), y no cambia mientras la app está
+  /// bloqueada a portrait.
+  int sensorOrientation = 0;
+
+  /// Si la cámara activa es la frontal — se fija una vez, al iniciar la
+  /// cámara (ver CameraDescription.lensDirection). Importa para la
+  /// rotación: ver PoseDetectionService.processCameraImage.
+  bool isFrontFacing = false;
+
+  /// Tamaño real (en píxeles lógicos) del lienzo donde se dibuja el
+  /// esqueleto — lo fija MeasureScreen vía LayoutBuilder. Solo para el
+  /// panel de diagnóstico (ver DiagnosticsOverlay): compararlo contra
+  /// `latestPose.imageWidth/imageHeight` revela si hay un desfase de
+  /// proporción entre lo que analiza el detector y lo que se muestra en
+  /// pantalla — causa típica de que el esqueleto no caiga sobre el cuerpo.
+  Size? lastCanvasSize;
+
   bool _isRecording = false;
   int _frameIndex = 0;
   RecordingMode _mode = RecordingMode.clean;
@@ -47,6 +69,13 @@ class MeasurementController extends ChangeNotifier {
   JointAngles? _previousAngles;
   DateTime? _previousFrameTime;
 
+  // Contadores de diagnóstico (ver DiagnosticsOverlay) — no se usan en la
+  // lógica de medición, solo para distinguir en pantalla "el detector nunca
+  // procesa un frame" (problema de formato/excepción) de "procesa pero
+  // nunca encuentra una persona" (problema de rotación/encuadre).
+  int _framesProcessed = 0;
+  int _framesWithPose = 0;
+
   PoseFrame get latestPose => _latestPose;
   JointAngles get latestAngles => _latestAngles;
   JointAngularVelocity get latestVelocity => _latestVelocity;
@@ -54,6 +83,13 @@ class MeasurementController extends ChangeNotifier {
   bool get isRecording => _isRecording;
   RecordingMode get mode => _mode;
   BodyView get view => _view;
+  int get rotationUsed => cameraFrameRotation(
+    sensorOrientation: sensorOrientation,
+    isFrontFacing: isFrontFacing,
+  );
+  int get framesProcessed => _framesProcessed;
+  int get framesWithPose => _framesWithPose;
+  String? get lastPoseError => _poseService.lastError;
 
   /// El modo no se puede cambiar mientras hay una grabación en curso — la
   /// UI (RecordingModeToggle) debe deshabilitarse en ese caso.
@@ -73,21 +109,21 @@ class MeasurementController extends ChangeNotifier {
 
   Future<void> initializePoseDetector() => _poseService.initialize();
 
-  /// Ángulo (0/90/180/270) que el detector debe aplicar para enderezar la
-  /// imagen del sensor — se fija una vez, al iniciar la cámara (ver
-  /// CameraDescription.sensorOrientation), y no cambia mientras la app está
-  /// bloqueada a portrait.
-  set sensorOrientation(int degrees) => _sensorOrientation = degrees;
-
   /// Callback para `startImageStream`/`startVideoRecording(onAvailable:)`.
   void handleCameraImage(CameraImage image) {
     if (_busyProcessing) return;
     _busyProcessing = true;
 
     _poseService
-        .processCameraImage(image, sensorOrientation: _sensorOrientation)
+        .processCameraImage(
+          image,
+          sensorOrientation: sensorOrientation,
+          isFrontFacing: isFrontFacing,
+        )
         .then((frame) {
           if (frame == null) return;
+          _framesProcessed++;
+          if (frame.hasPose) _framesWithPose++;
           _latestPose = frame;
           _latestAngles = JointAngles.fromPoseFrame(frame).filterForView(_view);
 

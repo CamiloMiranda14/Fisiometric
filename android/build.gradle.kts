@@ -17,6 +17,20 @@ subprojects {
 }
 subprojects {
     project.evaluationDependsOn(":app")
+
+    // Gradle 9.x ya no promueve dependencias transitivas: camera-core (usado
+    // por el subproyecto del plugin camera_android_camerax, dependencia de
+    // `camera`) necesita esto en tiempo de compilación pero no lo declara
+    // explícito — bug conocido, ver
+    // https://github.com/flutter/flutter/issues/169487.
+    // `withPlugin` (a diferencia de `afterEvaluate`) no depende del orden de
+    // evaluación del proyecto: corre apenas se aplica el plugin indicado,
+    // sin importar si ya fue evaluado por otro camino (p.ej. evaluationDependsOn).
+    if (project.name == "camera_android_camerax") {
+        pluginManager.withPlugin("com.android.library") {
+            dependencies.add("implementation", "androidx.concurrent:concurrent-futures:1.2.0")
+        }
+    }
 }
 
 tasks.register<Delete>("clean") {

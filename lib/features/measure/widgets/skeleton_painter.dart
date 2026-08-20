@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/pose/angle_calculator.dart';
+import '../../../core/pose/body_view.dart';
 import '../../../models/joint_angles.dart';
 import '../../../models/pose_frame.dart';
 import '../../../theme/app_colors.dart';
@@ -17,10 +18,24 @@ import '../../../theme/app_colors.dart';
 /// esqueleto aparece rotado o reflejado respecto a la imagen de cámara,
 /// este es el primer punto a revisar.
 class SkeletonPainter extends CustomPainter {
-  SkeletonPainter({required this.frame, required this.angles});
+  SkeletonPainter({
+    required this.frame,
+    required this.angles,
+    required this.view,
+    required this.isFrontFacing,
+  });
 
   final PoseFrame frame;
   final JointAngles angles;
+  final BodyView view;
+
+  /// Confirmado en dispositivo: la vista previa de la cámara frontal viene
+  /// espejada por hardware (comportamiento normal de "selfie"), pero el
+  /// flujo de análisis que usa el detector de pose NO — los datos/ángulos
+  /// ya están bien calculados sobre ese flujo sin espejar, así que aquí
+  /// solo se voltea el DIBUJO para que coincida con la vista previa
+  /// espejada, sin tocar landmarks/ángulos.
+  final bool isFrontFacing;
 
   static final Paint _bonePaint = Paint()
     ..color = AppColors.orangeAccent
@@ -49,9 +64,16 @@ class SkeletonPainter extends CustomPainter {
 
     final scaleX = size.width / frame.imageWidth;
     final scaleY = size.height / frame.imageHeight;
-    Offset toCanvas(double x, double y) => Offset(x * scaleX, y * scaleY);
+    Offset toCanvas(double x, double y) => Offset(
+      isFrontFacing ? size.width - (x * scaleX) : x * scaleX,
+      y * scaleY,
+    );
 
     for (final (fromType, toType) in skeletonBones) {
+      if (!isLandmarkActiveForView(fromType, view) ||
+          !isLandmarkActiveForView(toType, view)) {
+        continue;
+      }
       final from = frame[fromType];
       final to = frame[toType];
       if (from == null || to == null) continue;
@@ -67,6 +89,7 @@ class SkeletonPainter extends CustomPainter {
     }
 
     for (final landmark in frame.landmarks.values) {
+      if (!isLandmarkActiveForView(landmark.type, view)) continue;
       if (landmark.visibility < kMinLandmarkVisibility) continue;
       final center = toCanvas(landmark.x, landmark.y);
       canvas.drawCircle(center, 5, _jointFillPaint);
@@ -89,6 +112,9 @@ class SkeletonPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant SkeletonPainter oldDelegate) {
-    return oldDelegate.frame != frame || oldDelegate.angles != angles;
+    return oldDelegate.frame != frame ||
+        oldDelegate.angles != angles ||
+        oldDelegate.view != view ||
+        oldDelegate.isFrontFacing != isFrontFacing;
   }
 }

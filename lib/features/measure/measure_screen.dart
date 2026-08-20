@@ -1,8 +1,10 @@
 import 'dart:io';
 
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/pose/body_view.dart';
 import '../../core/utils/session_naming.dart';
 import '../../models/recording_mode.dart';
 import '../../models/session_metadata.dart';
@@ -10,6 +12,7 @@ import '../../services/camera/camera_service.dart';
 import '../../services/export/session_exporter.dart';
 import '../../services/storage/session_storage_service.dart';
 import '../../theme/app_colors.dart';
+import '../exercises/exercise_catalog_screen.dart';
 import '../sessions/sessions_list_screen.dart';
 import 'controllers/clean_video_recorder.dart';
 import 'controllers/measurement_controller.dart';
@@ -22,16 +25,23 @@ import 'widgets/recording_mode_toggle.dart';
 import 'widgets/skeleton_painter.dart';
 
 class MeasureScreen extends StatelessWidget {
-  const MeasureScreen({super.key});
+  const MeasureScreen({super.key, this.initialView = BodyView.frontal});
+
+  /// Vista con la que arranca la medición — normalmente `frontal` (entrada
+  /// por defecto), o la vista asociada al ejercicio elegido cuando se llega
+  /// desde ExerciseDemoScreen.
+  final BodyView initialView;
 
   @override
   Widget build(BuildContext context) {
-    return const PermissionGate(child: _CameraView());
+    return PermissionGate(child: _CameraView(initialView: initialView));
   }
 }
 
 class _CameraView extends StatefulWidget {
-  const _CameraView();
+  const _CameraView({required this.initialView});
+
+  final BodyView initialView;
 
   @override
   State<_CameraView> createState() => _CameraViewState();
@@ -59,6 +69,7 @@ class _CameraViewState extends State<_CameraView> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _measurementController.view = widget.initialView;
     _initFuture = _initialize();
   }
 
@@ -66,12 +77,20 @@ class _CameraViewState extends State<_CameraView> with WidgetsBindingObserver {
     // Cámara y detector de pose son independientes entre sí — se inicializan
     // en paralelo para no sumar sus tiempos de arranque.
     final results = await Future.wait([
-      _cameraService.initialize(),
+      // Cámara frontal por defecto: la idea es que el paciente pueda
+      // colocar y ver el teléfono por sí mismo (uso autónomo, sin que
+      // alguien más tenga que sostenerlo y apuntar con la trasera).
+      _cameraService.initialize(preferredLens: CameraLensDirection.front),
       _measurementController.initializePoseDetector(),
     ]);
     final controller = results[0] as CameraController;
 
     _measurementController.sensorOrientation = controller.description.sensorOrientation;
+    // Se lee la cámara que efectivamente quedó inicializada (no se asume
+    // que "front" siempre esté disponible — CameraService cae a la primera
+    // cámara del dispositivo si no hay frontal).
+    _measurementController.isFrontFacing =
+        controller.description.lensDirection == CameraLensDirection.front;
     await controller.startImageStream(_measurementController.handleCameraImage);
   }
 
@@ -236,15 +255,27 @@ class _CameraViewState extends State<_CameraView> with WidgetsBindingObserver {
       jointStats: rawStats.map(
         (k, v) => MapEntry(k, JointStats(min: v.min, max: v.max, avg: v.avg)),
       ),
+      velocityStats: _exporter.computeVelocityStats(samples),
+      symmetryStats: _exporter.computeSymmetryStats(samples, view),
       videoFileName: _videoFileName,
     );
     await File('${dir.path}/session.json').writeAsString(metadata.toJsonString());
 
     if (!mounted) return;
     setState(() => _recordState = RecordButtonState.idle);
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('Sesión guardada: $_sessionId')));
+    var message = 'Sesión guardada: $_sessionId';
+    if (kDebugMode && _measurementController.mode == RecordingMode.overlayBurned) {
+      // Diagnóstico temporal (ver overlay_video_recorder.dart): si el video
+      // no reproduce, este número dice si el problema es que casi ningún
+      // cuadro se logró capturar (revisar lastError) o que sí se capturaron
+      // pero el archivo igual quedó corrupto (otro tipo de bug).
+      message +=
+          '\nOverlay: ${_overlayRecorder.framesAppended}/${_overlayRecorder.framesAttempted} cuadros'
+          '${_overlayRecorder.lastError != null ? ' — error: ${_overlayRecorder.lastError}' : ''}';
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), duration: const Duration(seconds: 8)),
+    );
   }
 
   @override
@@ -259,6 +290,13 @@ class _CameraViewState extends State<_CameraView> with WidgetsBindingObserver {
             tooltip: 'Sesiones guardadas',
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const SessionsListScreen()),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.fitness_center_outlined),
+            tooltip: 'Ejercicios',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const ExerciseCatalogScreen()),
             ),
           ),
         ],
@@ -314,18 +352,37 @@ class _MeasureStack extends StatelessWidget {
             key: repaintBoundaryKey,
             child: CameraPreview(
               controller,
-              child: AnimatedBuilder(
-                animation: measurementController,
-                builder: (context, _) => CustomPaint(
-                  painter: SkeletonPainter(
-                    frame: measurementController.latestPose,
-                    angles: measurementController.latestAngles,
-                  ),
-                ),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  // Solo para el panel de diagnóstico — ver comentario en
+                  // MeasurementController.lastCanvasSize.
+                  measurementController.lastCanvasSize = constraints.biggest;
+                  return AnimatedBuilder(
+                    animation: measurementController,
+                    builder: (context, _) => CustomPaint(
+                      painter: SkeletonPainter(
+                        frame: measurementController.latestPose,
+                        angles: measurementController.latestAngles,
+                        view: measurementController.view,
+                        isFrontFacing: measurementController.isFrontFacing,
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
           ),
         ),
+        if (kDebugMode)
+          Positioned(
+            top: 16,
+            left: 16,
+            child: AnimatedBuilder(
+              animation: measurementController,
+              builder: (context, _) =>
+                  _DiagnosticsOverlay(controller: measurementController),
+            ),
+          ),
         Positioned(
           top: 16,
           right: 16,
@@ -369,6 +426,65 @@ class _MeasureStack extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Overlay temporal (solo `kDebugMode`) para diagnosticar en pantalla, sin
+/// necesitar logs por USB, por qué el detector de pose no encuentra a
+/// nadie: distingue "nunca procesa un frame" (framesProcesados en 0, revisar
+/// formato/excepciones) de "procesa pero no detecta persona" (framesConPose
+/// en 0 con framesProcesados subiendo, revisar rotación/encuadre).
+class _DiagnosticsOverlay extends StatelessWidget {
+  const _DiagnosticsOverlay({required this.controller});
+
+  final MeasurementController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final frontal = controller.isFrontFacing ? 'sí' : 'no';
+    final error = controller.lastPoseError;
+    final pose = controller.latestPose;
+    final canvas = controller.lastCanvasSize;
+    final poseAspect = pose.imageHeight == 0
+        ? null
+        : pose.imageWidth / pose.imageHeight;
+    final canvasAspect = canvas == null || canvas.height == 0
+        ? null
+        : canvas.width / canvas.height;
+    final lines = [
+      'frontal: $frontal',
+      'sensor: ${controller.sensorOrientation}° · rot: ${controller.rotationUsed}°',
+      'frames: ${controller.framesProcessed} · con pose: ${controller.framesWithPose}',
+      'pose img: ${pose.imageWidth}x${pose.imageHeight}'
+          '${poseAspect != null ? ' (${poseAspect.toStringAsFixed(3)})' : ''}',
+      'canvas: ${canvas == null ? '?' : '${canvas.width.round()}x${canvas.height.round()}'}'
+          '${canvasAspect != null ? ' (${canvasAspect.toStringAsFixed(3)})' : ''}',
+      if (error != null) 'error: ${error.length > 220 ? error.substring(0, 220) : error}',
+    ];
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 320),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final line in lines)
+            Text(
+              line,
+              style: TextStyle(
+                color: line.startsWith('error:')
+                    ? Colors.redAccent
+                    : Colors.greenAccent,
+                fontSize: 11,
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

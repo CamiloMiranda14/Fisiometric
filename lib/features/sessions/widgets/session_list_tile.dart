@@ -20,17 +20,15 @@ class SessionListTile extends StatelessWidget {
     final modeLabel = metadata.mode == RecordingMode.clean
         ? 'Video limpio'
         : 'Overlay quemado';
+    final modeIcon = metadata.mode == RecordingMode.clean
+        ? Icons.videocam_outlined
+        : Icons.layers_outlined;
     final viewLabel = metadata.view.label;
 
     return ListTile(
       leading: CircleAvatar(
         backgroundColor: AppColors.tealPrimary,
-        child: Icon(
-          metadata.mode == RecordingMode.clean
-              ? Icons.videocam_outlined
-              : Icons.layers_outlined,
-          color: Colors.white,
-        ),
+        child: Icon(modeIcon, color: Colors.white),
       ),
       title: Text(dateLabel),
       subtitle: Text(

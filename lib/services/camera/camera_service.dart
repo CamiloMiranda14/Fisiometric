@@ -9,10 +9,13 @@ import '../../core/errors/app_exceptions.dart';
 /// ver CleanVideoRecorder) y el tamaño de cada frame que se envía al
 /// detector de pose — cada frame se codifica en base64 antes de cruzar el
 /// method channel, así que un preset muy alto puede saturar ese canal en
-/// dispositivos de gama baja. `medium` es un punto de partida razonable; si
-/// el rendimiento en un dispositivo real resulta pobre, `low` es el primer
-/// ajuste a probar.
-const kCameraResolutionPreset = ResolutionPreset.medium;
+/// dispositivos de gama baja. Bajado de `medium` a `low`: confirmado en
+/// dispositivo (Moto G47) que con `medium` el análisis por cuadro tarda
+/// más que el tiempo real entre cuadros, así que el esqueleto dibujado
+/// siempre queda mostrando un instante anterior — visible como que "no
+/// alcanza" al brazo mientras se mueve, aunque el ángulo calculado en sí
+/// sea correcto.
+const kCameraResolutionPreset = ResolutionPreset.low;
 
 /// Maneja el ciclo de vida de un [CameraController] único, compartido tanto
 /// por la vista previa/detección de pose como por los dos modos de grabación.
