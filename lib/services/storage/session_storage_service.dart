@@ -39,4 +39,15 @@ class SessionStorageService {
       await dir.delete(recursive: true);
     }
   }
+
+  /// Borra todas las sesiones guardadas (pruebas, grabaciones, etc.) — para
+  /// limpiar de una vez las pruebas acumuladas durante el desarrollo/uso de
+  /// la app, sin tener que eliminar sesión por sesión.
+  Future<void> deleteAllSessions() async {
+    final root = await sessionsRootDirectory();
+    if (await root.exists()) {
+      await root.delete(recursive: true);
+    }
+    await root.create(recursive: true);
+  }
 }

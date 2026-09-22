@@ -29,10 +29,12 @@ bool isJointActiveForView(JointKind kind, BodyView view) {
     JointKind.hombroIzq ||
     JointKind.codoIzq ||
     JointKind.munecaIzq ||
+    JointKind.caderaIzq ||
     JointKind.rodillaIzq => true,
     JointKind.hombroDer ||
     JointKind.codoDer ||
     JointKind.munecaDer ||
+    JointKind.caderaDer ||
     JointKind.rodillaDer => false,
   };
 

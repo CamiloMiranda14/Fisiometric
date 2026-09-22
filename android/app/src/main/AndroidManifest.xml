@@ -1,6 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="true" />
+    <!-- Android 13+ (API 33) exige este permiso en tiempo de ejecución para
+         mostrar cualquier notificación — ver DailyReminderService, que lo
+         pide antes de programar el recordatorio diario. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:label="Fisiometric"

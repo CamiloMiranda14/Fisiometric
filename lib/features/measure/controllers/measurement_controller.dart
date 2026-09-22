@@ -3,12 +3,12 @@ import 'dart:ui';
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 
+import '../../../core/pose/angle_calculator.dart';
 import '../../../core/pose/angular_velocity_calculator.dart';
+import '../../../core/pose/body_region.dart';
 import '../../../core/pose/body_view.dart';
 import '../../../core/pose/camera_rotation.dart';
-import '../../../core/pose/symmetry_calculator.dart';
 import '../../../models/angle_sample.dart';
-import '../../../models/bilateral_symmetry.dart';
 import '../../../models/joint_angles.dart';
 import '../../../models/joint_angular_velocity.dart';
 import '../../../models/pose_frame.dart';
@@ -45,23 +45,47 @@ class MeasurementController extends ChangeNotifier {
   /// rotación: ver PoseDetectionService.processCameraImage.
   bool isFrontFacing = false;
 
+  /// Región del cuerpo del ejercicio activo — se fija una vez, al iniciar
+  /// MeasureScreen (ver `widget.region`), y no cambia mientras dura la
+  /// sesión (a diferencia de `view`, que sí se puede tocar). Anula los
+  /// ángulos/keypoints que no pertenecen a esta región (ver
+  /// `filterForRegion`) para que un ejercicio de tren superior no calcule
+  /// ni muestre rodilla/tobillo, y viceversa.
+  BodyRegion region = BodyRegion.fullBody;
+
+  /// Qué articulaciones mide el ejercicio activo (ver
+  /// `Exercise.trackedJoints`/`trackedJointsForExerciseId`) — se fija una
+  /// vez, al iniciar MeasureScreen. `null` (p.ej. "Prueba rápida", sin
+  /// ejercicio elegido) no restringe nada más allá de `region`. Anula los
+  /// ángulos que la región sí permitiría pero este ejercicio en particular
+  /// no mide — p.ej. abducción de hombro no muestra codo/muñeca aunque
+  /// ambas sean "tren superior".
+  Set<JointKind>? trackedJoints;
+
   /// Tamaño real (en píxeles lógicos) del lienzo donde se dibuja el
-  /// esqueleto — lo fija MeasureScreen vía LayoutBuilder. Solo para el
-  /// panel de diagnóstico (ver DiagnosticsOverlay): compararlo contra
-  /// `latestPose.imageWidth/imageHeight` revela si hay un desfase de
-  /// proporción entre lo que analiza el detector y lo que se muestra en
-  /// pantalla — causa típica de que el esqueleto no caiga sobre el cuerpo.
+  /// esqueleto — lo fija MeasureScreen vía LayoutBuilder. Usado para
+  /// revisar si el paciente ya se alineó con la silueta guía (ver
+  /// positioning_alignment.dart).
   Size? lastCanvasSize;
 
   bool _isRecording = false;
   int _frameIndex = 0;
-  RecordingMode _mode = RecordingMode.clean;
+  // "Video limpio" ya no se ofrece al paciente (ver RecordingMode) — se
+  // graba siempre con el esqueleto quemado encima, así se ve exactamente
+  // lo mismo que en la app al revisar el video después.
+  RecordingMode _mode = RecordingMode.overlayBurned;
   BodyView _view = BodyView.frontal;
 
   PoseFrame _latestPose = PoseFrame.empty;
   JointAngles _latestAngles = JointAngles.empty;
   JointAngularVelocity _latestVelocity = JointAngularVelocity.empty;
-  BilateralSymmetry _latestSymmetry = BilateralSymmetry.empty;
+
+  // Historial corto del pico de velocidad (la articulación trackeada que se
+  // mueve más rápido) por cuadro — se promedia para decidir `isMovingTooFast`
+  // sin que el ruido de un solo cuadro lo prenda/apague de golpe (ver
+  // kVelocitySmoothingWindow).
+  final List<double> _recentPeakVelocities = [];
+  bool _isMovingTooFast = false;
 
   // Estado para calcular velocidad angular frame a frame. Es continuo/en
   // vivo (no se resetea al empezar/terminar una grabación, ver
@@ -79,7 +103,14 @@ class MeasurementController extends ChangeNotifier {
   PoseFrame get latestPose => _latestPose;
   JointAngles get latestAngles => _latestAngles;
   JointAngularVelocity get latestVelocity => _latestVelocity;
-  BilateralSymmetry get latestSymmetry => _latestSymmetry;
+
+  /// Si el promedio reciente de velocidad angular de la articulación
+  /// trackeada más rápida supera [kFastMovementThresholdDegPerSec] — ver
+  /// MeasureScreen, que muestra un aviso mientras esto sea `true` y se esté
+  /// grabando. Se actualiza en cada cuadro junto con el resto del estado en
+  /// vivo (ver [handleCameraImage]).
+  bool get isMovingTooFast => _isMovingTooFast;
+
   bool get isRecording => _isRecording;
   RecordingMode get mode => _mode;
   BodyView get view => _view;
@@ -91,8 +122,8 @@ class MeasurementController extends ChangeNotifier {
   int get framesWithPose => _framesWithPose;
   String? get lastPoseError => _poseService.lastError;
 
-  /// El modo no se puede cambiar mientras hay una grabación en curso — la
-  /// UI (RecordingModeToggle) debe deshabilitarse en ese caso.
+  /// Sin UI que lo llame hoy (ver comentario en `_mode`) — queda disponible
+  /// solo por si hace falta cambiarlo programáticamente más adelante.
   set mode(RecordingMode newMode) {
     if (_isRecording || newMode == _mode) return;
     _mode = newMode;
@@ -125,7 +156,10 @@ class MeasurementController extends ChangeNotifier {
           _framesProcessed++;
           if (frame.hasPose) _framesWithPose++;
           _latestPose = frame;
-          _latestAngles = JointAngles.fromPoseFrame(frame).filterForView(_view);
+          _latestAngles = JointAngles.fromPoseFrame(frame)
+              .filterForView(_view)
+              .filterForRegion(region)
+              .filterForJoints(trackedJoints);
 
           final now = DateTime.now();
           final previousAngles = _previousAngles;
@@ -140,9 +174,15 @@ class MeasurementController extends ChangeNotifier {
           _previousAngles = _latestAngles;
           _previousFrameTime = now;
 
-          _latestSymmetry = _view == BodyView.frontal
-              ? computeBilateralSymmetry(_latestAngles)
-              : BilateralSymmetry.empty;
+          final peaks = _latestVelocity.asOrderedList.whereType<double>().map((v) => v.abs());
+          final peak = peaks.isEmpty ? 0.0 : peaks.reduce((a, b) => a > b ? a : b);
+          _recentPeakVelocities.add(peak);
+          if (_recentPeakVelocities.length > kVelocitySmoothingWindow) {
+            _recentPeakVelocities.removeAt(0);
+          }
+          final smoothedPeak =
+              _recentPeakVelocities.reduce((a, b) => a + b) / _recentPeakVelocities.length;
+          _isMovingTooFast = smoothedPeak > kFastMovementThresholdDegPerSec;
 
           if (_isRecording) {
             _buffer.add(
@@ -151,7 +191,6 @@ class MeasurementController extends ChangeNotifier {
                 frameIndex: _frameIndex++,
                 angles: _latestAngles,
                 velocity: _latestVelocity,
-                symmetry: _latestSymmetry,
               ),
             );
           }

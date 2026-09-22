@@ -1,54 +1,131 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/pose/angle_calculator.dart';
+import '../../core/pose/body_outline_images.dart';
+import '../../core/pose/body_region.dart';
 import '../../core/pose/body_view.dart';
+import '../../core/pose/positioning_alignment.dart';
 import '../../core/utils/session_naming.dart';
 import '../../models/recording_mode.dart';
 import '../../models/session_metadata.dart';
 import '../../services/camera/camera_service.dart';
 import '../../services/export/session_exporter.dart';
+import '../../services/notifications/daily_reminder_service.dart';
+import '../../services/patient/patient_profile_service.dart';
 import '../../services/storage/session_storage_service.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/widgets/logo_loading_view.dart';
+import '../exercises/exercise_catalog.dart';
 import '../exercises/exercise_catalog_screen.dart';
 import '../sessions/sessions_list_screen.dart';
+import 'session_result_screen.dart';
 import 'controllers/clean_video_recorder.dart';
 import 'controllers/measurement_controller.dart';
 import 'controllers/overlay_video_recorder.dart';
 import 'widgets/angle_hud_panel.dart';
 import 'widgets/body_view_toggle.dart';
 import 'widgets/permission_gate.dart';
+import 'widgets/positioning_guide_painter.dart';
 import 'widgets/record_button.dart';
-import 'widgets/recording_mode_toggle.dart';
 import 'widgets/skeleton_painter.dart';
 
 class MeasureScreen extends StatelessWidget {
-  const MeasureScreen({super.key, this.initialView = BodyView.frontal});
+  const MeasureScreen({
+    super.key,
+    this.initialView = BodyView.frontal,
+    this.patientName,
+    this.region = BodyRegion.fullBody,
+    this.exerciseId,
+    this.trackedJoints,
+  });
 
   /// Vista con la que arranca la medición — normalmente `frontal` (entrada
   /// por defecto), o la vista asociada al ejercicio elegido cuando se llega
   /// desde ExerciseDemoScreen.
   final BodyView initialView;
 
+  /// Nombre/identificador del paciente, ingresado antes de llegar aquí (ver
+  /// QuickTestViewScreen/ExerciseDemoScreen) — se guarda junto a cada
+  /// sesión que se grabe en esta pantalla.
+  final String? patientName;
+
+  /// Qué parte del cuerpo dibuja la silueta guía — `fullBody` (por defecto,
+  /// usado en "Prueba rápida") o la región del ejercicio elegido.
+  final BodyRegion region;
+
+  /// `Exercise.id` del catálogo, si se llegó desde ExerciseDemoScreen — se
+  /// guarda junto a la sesión para asociarla a la patología en
+  /// ProgressScreen. `null` en "Prueba rápida".
+  final String? exerciseId;
+
+  /// Fija explícitamente qué articulación(es) medir — usado por "Prueba
+  /// rápida" (que no tiene un `exerciseId` del cual derivarlo). Si se da,
+  /// tiene prioridad sobre lo que derivaría `exerciseId`; `null` con
+  /// `exerciseId` también `null` no restringe nada ("todas las
+  /// articulaciones").
+  final Set<JointKind>? trackedJoints;
+
   @override
   Widget build(BuildContext context) {
-    return PermissionGate(child: _CameraView(initialView: initialView));
+    return PermissionGate(
+      child: _CameraView(
+        initialView: initialView,
+        patientName: patientName,
+        region: region,
+        exerciseId: exerciseId,
+        trackedJoints: trackedJoints,
+      ),
+    );
   }
 }
 
 class _CameraView extends StatefulWidget {
-  const _CameraView({required this.initialView});
+  const _CameraView({
+    required this.initialView,
+    this.patientName,
+    required this.region,
+    this.exerciseId,
+    this.trackedJoints,
+  });
 
   final BodyView initialView;
+  final String? patientName;
+  final BodyRegion region;
+  final String? exerciseId;
+  final Set<JointKind>? trackedJoints;
 
   @override
   State<_CameraView> createState() => _CameraViewState();
 }
 
+/// Fases previas a la grabación en sí, entre tocar el botón y que empiece
+/// realmente a grabar — ver MeasureScreen._onRecordButtonPressed.
+enum _PreRecordPhase {
+  /// No se tocó el botón todavía (o ya se canceló) — solo se ve la silueta
+  /// guía, sin exigir nada.
+  none,
+
+  /// Se tocó el botón: esperando que el paciente se alinee con la silueta.
+  waitingAlignment,
+
+  /// Ya se alineó lo suficiente por un momento sostenido — cuenta regresiva
+  /// antes de arrancar la grabación de verdad.
+  countdown,
+}
+
 class _CameraViewState extends State<_CameraView> with WidgetsBindingObserver {
   static const String _videoFileName = 'video.mp4';
+
+  /// Cuánto debe mantenerse alineado el paciente antes de arrancar la
+  /// cuenta regresiva — evita que un roce momentáneo con la silueta
+  /// dispare la grabación por accidente.
+  static const Duration _sustainedAlignmentDuration = Duration(milliseconds: 700);
+  static const int _countdownStartValue = 3;
 
   final CameraService _cameraService = CameraService();
   final MeasurementController _measurementController = MeasurementController();
@@ -59,17 +136,28 @@ class _CameraViewState extends State<_CameraView> with WidgetsBindingObserver {
   final GlobalKey _repaintBoundaryKey = GlobalKey();
 
   late Future<void> _initFuture;
+  late BodyOutlineImages _outlineImages;
   RecordButtonState _recordState = RecordButtonState.idle;
 
   String? _sessionId;
   Directory? _sessionDir;
   DateTime? _sessionStartedAt;
 
+  _PreRecordPhase _preRecordPhase = _PreRecordPhase.none;
+  bool _isAligned = false;
+  int _countdownValue = _countdownStartValue;
+  DateTime? _alignedSince;
+  Timer? _countdownTimer;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _measurementController.view = widget.initialView;
+    _measurementController.region = widget.region;
+    _measurementController.trackedJoints =
+        widget.trackedJoints ?? trackedJointsForExerciseId(widget.exerciseId);
+    _measurementController.addListener(_onMeasurementUpdate);
     _initFuture = _initialize();
   }
 
@@ -82,8 +170,10 @@ class _CameraViewState extends State<_CameraView> with WidgetsBindingObserver {
       // alguien más tenga que sostenerlo y apuntar con la trasera).
       _cameraService.initialize(preferredLens: CameraLensDirection.front),
       _measurementController.initializePoseDetector(),
+      loadBodyOutlineImages(),
     ]);
     final controller = results[0] as CameraController;
+    _outlineImages = results[2] as BodyOutlineImages;
 
     _measurementController.sensorOrientation = controller.description.sensorOrientation;
     // Se lee la cámara que efectivamente quedó inicializada (no se asume
@@ -97,9 +187,112 @@ class _CameraViewState extends State<_CameraView> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _countdownTimer?.cancel();
+    _measurementController.removeListener(_onMeasurementUpdate);
     _measurementController.dispose();
     _cameraService.dispose();
     super.dispose();
+  }
+
+  /// Corre en cada frame procesado en vivo (ver MeasurementController) —
+  /// solo hace algo mientras el gate de pre-grabación está activo. Evita
+  /// llamar `setState` en cada frame salvo que algo realmente visible
+  /// cambie (la transición alineado/no-alineado), para no repintar toda la
+  /// pantalla en cada cuadro — el resto del estado (`_alignedSince`) se
+  /// actualiza en silencio.
+  void _onMeasurementUpdate() {
+    if (_preRecordPhase == _PreRecordPhase.none) return;
+
+    final canvasSize = _measurementController.lastCanvasSize;
+    final aligned = canvasSize != null &&
+        isAlignedWithGuide(
+          frame: _measurementController.latestPose,
+          view: _measurementController.view,
+          region: widget.region,
+          canvasSize: canvasSize,
+          isFrontFacing: _measurementController.isFrontFacing,
+        );
+
+    if (aligned != _isAligned) {
+      setState(() => _isAligned = aligned);
+    }
+
+    if (_preRecordPhase == _PreRecordPhase.countdown) {
+      // Si se desalinea a mitad de la cuenta regresiva, se cancela y se
+      // vuelve a esperar — mejor eso que arrancar una toma mal encuadrada.
+      if (!aligned) _cancelCountdownBackToWaiting();
+      return;
+    }
+
+    if (!aligned) {
+      _alignedSince = null;
+      return;
+    }
+    _alignedSince ??= DateTime.now();
+    if (DateTime.now().difference(_alignedSince!) >= _sustainedAlignmentDuration) {
+      _startCountdown();
+    }
+  }
+
+  void _startCountdown() {
+    _alignedSince = null;
+    setState(() {
+      _preRecordPhase = _PreRecordPhase.countdown;
+      _countdownValue = _countdownStartValue;
+    });
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_countdownValue <= 1) {
+        timer.cancel();
+        _countdownTimer = null;
+        _preRecordPhase = _PreRecordPhase.none;
+        _toggleRecording();
+        return;
+      }
+      setState(() => _countdownValue--);
+    });
+  }
+
+  void _cancelCountdownBackToWaiting() {
+    _countdownTimer?.cancel();
+    _countdownTimer = null;
+    setState(() => _preRecordPhase = _PreRecordPhase.waitingAlignment);
+  }
+
+  /// Cancela el gate por completo (botón tocado de nuevo mientras se
+  /// esperaba alineación o corría la cuenta regresiva) — vuelve a
+  /// `idle` sin haber empezado a grabar nada.
+  void _cancelPreRecordGate() {
+    _countdownTimer?.cancel();
+    _countdownTimer = null;
+    _alignedSince = null;
+    setState(() {
+      _preRecordPhase = _PreRecordPhase.none;
+      _isAligned = false;
+    });
+  }
+
+  /// Botón principal: si el gate ya está activo, tocarlo de nuevo lo
+  /// cancela; si está en reposo, lo arranca (en vez de grabar directo) o
+  /// detiene la grabación en curso — ver _toggleRecording.
+  void _onRecordButtonPressed() {
+    if (_preRecordPhase != _PreRecordPhase.none) {
+      _cancelPreRecordGate();
+      return;
+    }
+    if (_recordState == RecordButtonState.recording) {
+      _toggleRecording();
+      return;
+    }
+    if (_recordState == RecordButtonState.idle) {
+      setState(() => _preRecordPhase = _PreRecordPhase.waitingAlignment);
+    }
+  }
+
+  /// Salvavidas por si la detección no logra confirmar alineación (mala
+  /// luz, encuadre atípico, etc.) — empieza a grabar directo, sin esperar.
+  void _forceStartRecording() {
+    _cancelPreRecordGate();
+    _toggleRecording();
   }
 
   @override
@@ -242,7 +435,6 @@ class _CameraViewState extends State<_CameraView> with WidgetsBindingObserver {
 
     final view = _measurementController.view;
     await _exporter.writeCsv('${dir.path}/datos.csv', samples, view);
-    await _exporter.writeXlsx('${dir.path}/datos.xlsx', samples, view);
 
     final rawStats = _exporter.computeJointStats(samples);
     final metadata = SessionMetadata(
@@ -250,31 +442,46 @@ class _CameraViewState extends State<_CameraView> with WidgetsBindingObserver {
       startedAt: _sessionStartedAt!,
       mode: _measurementController.mode,
       view: view,
+      region: widget.region,
       durationMs: durationMs,
       sampleCount: samples.length,
       jointStats: rawStats.map(
         (k, v) => MapEntry(k, JointStats(min: v.min, max: v.max, avg: v.avg)),
       ),
       velocityStats: _exporter.computeVelocityStats(samples),
-      symmetryStats: _exporter.computeSymmetryStats(samples, view),
       videoFileName: _videoFileName,
+      patientName: widget.patientName,
+      exerciseId: widget.exerciseId,
     );
     await File('${dir.path}/session.json').writeAsString(metadata.toJsonString());
 
+    // No se espera — reprograma el recordatorio diario (ver
+    // DailyReminderService) ahora que hoy ya quedó medido, sin demorar la
+    // navegación a la pantalla de resultados.
+    unawaited(
+      PatientProfileService().loadLast().then((profile) {
+        if (profile != null) DailyReminderService().refresh(profile);
+      }),
+    );
+
     if (!mounted) return;
     setState(() => _recordState = RecordButtonState.idle);
-    var message = 'Sesión guardada: $_sessionId';
     if (kDebugMode && _measurementController.mode == RecordingMode.overlayBurned) {
       // Diagnóstico temporal (ver overlay_video_recorder.dart): si el video
       // no reproduce, este número dice si el problema es que casi ningún
       // cuadro se logró capturar (revisar lastError) o que sí se capturaron
       // pero el archivo igual quedó corrupto (otro tipo de bug).
-      message +=
-          '\nOverlay: ${_overlayRecorder.framesAppended}/${_overlayRecorder.framesAttempted} cuadros'
-          '${_overlayRecorder.lastError != null ? ' — error: ${_overlayRecorder.lastError}' : ''}';
+      debugPrint(
+        '[Fisiometric] Overlay: ${_overlayRecorder.framesAppended}/'
+        '${_overlayRecorder.framesAttempted} cuadros'
+        '${_overlayRecorder.lastError != null ? ' — error: ${_overlayRecorder.lastError}' : ''}',
+      );
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), duration: const Duration(seconds: 8)),
+    // Al terminar de grabar, se lleva directo a la retroalimentación (rango
+    // máximo alcanzado) en vez de solo un aviso — desde ahí el paciente
+    // elige repetir o ver los resultados completos.
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => SessionResultScreen(dir: dir, metadata: metadata)),
     );
   }
 
@@ -296,7 +503,9 @@ class _CameraViewState extends State<_CameraView> with WidgetsBindingObserver {
             icon: const Icon(Icons.fitness_center_outlined),
             tooltip: 'Ejercicios',
             onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const ExerciseCatalogScreen()),
+              MaterialPageRoute(
+                builder: (_) => ExerciseCatalogScreen(patientName: widget.patientName ?? ''),
+              ),
             ),
           ),
         ],
@@ -305,9 +514,7 @@ class _CameraViewState extends State<_CameraView> with WidgetsBindingObserver {
         future: _initFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(
-              child: CircularProgressIndicator(color: AppColors.orangeAccent),
-            );
+            return const LogoLoadingView(message: 'Iniciando cámara...');
           }
           if (snapshot.hasError) {
             return _InitErrorMessage(error: snapshot.error!, onRetry: _retry);
@@ -316,7 +523,13 @@ class _CameraViewState extends State<_CameraView> with WidgetsBindingObserver {
             controller: _cameraService.controller!,
             measurementController: _measurementController,
             recordState: _recordState,
-            onToggleRecording: _toggleRecording,
+            preRecordPhase: _preRecordPhase,
+            isAligned: _isAligned,
+            countdownValue: _countdownValue,
+            region: widget.region,
+            outlineImages: _outlineImages,
+            onToggleRecording: _onRecordButtonPressed,
+            onForceRecord: _forceStartRecording,
             repaintBoundaryKey: _repaintBoundaryKey,
           );
         },
@@ -330,15 +543,33 @@ class _MeasureStack extends StatelessWidget {
     required this.controller,
     required this.measurementController,
     required this.recordState,
+    required this.preRecordPhase,
+    required this.isAligned,
+    required this.countdownValue,
+    required this.region,
+    required this.outlineImages,
     required this.onToggleRecording,
+    required this.onForceRecord,
     required this.repaintBoundaryKey,
   });
 
   final CameraController controller;
   final MeasurementController measurementController;
   final RecordButtonState recordState;
+  final _PreRecordPhase preRecordPhase;
+  final bool isAligned;
+  final int countdownValue;
+  final BodyRegion region;
+  final BodyOutlineImages outlineImages;
   final VoidCallback onToggleRecording;
+  final VoidCallback onForceRecord;
   final GlobalKey repaintBoundaryKey;
+
+  bool get _gateActive => preRecordPhase != _PreRecordPhase.none;
+  // Los controles se bloquean mientras graba Y mientras corre el gate de
+  // alineación/cuenta regresiva — no tiene sentido cambiar de vista o modo
+  // a mitad de cualquiera de los dos.
+  bool get _controlsLocked => recordState != RecordButtonState.idle || _gateActive;
 
   @override
   Widget build(BuildContext context) {
@@ -357,45 +588,96 @@ class _MeasureStack extends StatelessWidget {
                   // Solo para el panel de diagnóstico — ver comentario en
                   // MeasurementController.lastCanvasSize.
                   measurementController.lastCanvasSize = constraints.biggest;
-                  return AnimatedBuilder(
-                    animation: measurementController,
-                    builder: (context, _) => CustomPaint(
-                      painter: SkeletonPainter(
-                        frame: measurementController.latestPose,
-                        angles: measurementController.latestAngles,
-                        view: measurementController.view,
-                        isFrontFacing: measurementController.isFrontFacing,
+                  return Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      // Silueta guía: solo antes de grabar, para que el
+                      // paciente se ubique a la distancia correcta. Se
+                      // dibuja aparte del esqueleto real (que sigue
+                      // corriendo en vivo debajo) para dar retroalimentación
+                      // inmediata de qué tan bien está alineado.
+                      if (recordState == RecordButtonState.idle)
+                        CustomPaint(
+                          painter: PositioningGuidePainter(
+                            view: measurementController.view,
+                            isAligned: isAligned,
+                            region: region,
+                            images: outlineImages,
+                          ),
+                        ),
+                      AnimatedBuilder(
+                        animation: measurementController,
+                        builder: (context, _) => CustomPaint(
+                          painter: SkeletonPainter(
+                            frame: measurementController.latestPose,
+                            angles: measurementController.latestAngles,
+                            view: measurementController.view,
+                            region: region,
+                            isFrontFacing: measurementController.isFrontFacing,
+                            trackedJoints: measurementController.trackedJoints,
+                          ),
+                        ),
                       ),
-                    ),
+                    ],
                   );
                 },
               ),
             ),
           ),
         ),
-        if (kDebugMode)
-          Positioned(
-            top: 16,
-            left: 16,
-            child: AnimatedBuilder(
-              animation: measurementController,
-              builder: (context, _) =>
-                  _DiagnosticsOverlay(controller: measurementController),
-            ),
-          ),
         Positioned(
           top: 16,
+          left: 16,
           right: 16,
           child: AnimatedBuilder(
             animation: measurementController,
             builder: (context, _) => AngleHudPanel(
               angles: measurementController.latestAngles,
               velocity: measurementController.latestVelocity,
-              symmetry: measurementController.latestSymmetry,
               view: measurementController.view,
+              region: region,
+              trackedJoints: measurementController.trackedJoints,
             ),
           ),
         ),
+        if (_gateActive)
+          Positioned(
+            top: 100,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: _PreRecordBanner(
+                phase: preRecordPhase,
+                isAligned: isAligned,
+                onForceRecord: onForceRecord,
+              ),
+            ),
+          ),
+        // Aviso de movimiento brusco: solo mientras se está grabando de
+        // verdad (no durante el gate de alineación, donde el paciente
+        // todavía no está haciendo el ejercicio) — ver
+        // MeasurementController.isMovingTooFast.
+        if (recordState == RecordButtonState.recording)
+          Positioned(
+            top: 100,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: AnimatedBuilder(
+                animation: measurementController,
+                builder: (context, _) => measurementController.isMovingTooFast
+                    ? const _FastMovementWarning()
+                    : const SizedBox.shrink(),
+              ),
+            ),
+          ),
+        // Número de cuenta regresiva: aparte del mensaje de arriba y bien
+        // grande/centrado, para que se lea de un vistazo sin acercarse a la
+        // pantalla — mismo espíritu que el temporizador de una cámara.
+        if (preRecordPhase == _PreRecordPhase.countdown)
+          Positioned.fill(
+            child: Center(child: _CountdownBadge(value: countdownValue)),
+          ),
         Positioned(
           left: 0,
           right: 0,
@@ -407,21 +689,18 @@ class _MeasureStack extends StatelessWidget {
                 animation: measurementController,
                 builder: (context, _) => BodyViewToggle(
                   view: measurementController.view,
-                  locked: recordState != RecordButtonState.idle,
+                  locked: _controlsLocked,
                   onChanged: (newView) => measurementController.view = newView,
                 ),
               ),
-              const SizedBox(height: 8),
-              AnimatedBuilder(
-                animation: measurementController,
-                builder: (context, _) => RecordingModeToggle(
-                  mode: measurementController.mode,
-                  locked: recordState != RecordButtonState.idle,
-                  onChanged: (newMode) => measurementController.mode = newMode,
-                ),
-              ),
               const SizedBox(height: 16),
-              RecordButton(state: recordState, onPressed: onToggleRecording),
+              RecordButton(
+                // Mientras el gate está activo, el botón se muestra como
+                // "detener" (mismo ícono/color que grabando) — tocarlo
+                // cancela el gate, ver _onRecordButtonPressed.
+                state: _gateActive ? RecordButtonState.recording : recordState,
+                onPressed: onToggleRecording,
+              ),
             ],
           ),
         ),
@@ -430,60 +709,112 @@ class _MeasureStack extends StatelessWidget {
   }
 }
 
-/// Overlay temporal (solo `kDebugMode`) para diagnosticar en pantalla, sin
-/// necesitar logs por USB, por qué el detector de pose no encuentra a
-/// nadie: distingue "nunca procesa un frame" (framesProcesados en 0, revisar
-/// formato/excepciones) de "procesa pero no detecta persona" (framesConPose
-/// en 0 con framesProcesados subiendo, revisar rotación/encuadre).
-class _DiagnosticsOverlay extends StatelessWidget {
-  const _DiagnosticsOverlay({required this.controller});
-
-  final MeasurementController controller;
+/// Aviso de que el paciente está moviendo la articulación trackeada más
+/// rápido de lo recomendable (ver MeasurementController.isMovingTooFast) —
+/// aparece y desaparece solo, sin que el paciente tenga que hacer nada, ni
+/// interrumpe la grabación.
+class _FastMovementWarning extends StatelessWidget {
+  const _FastMovementWarning();
 
   @override
   Widget build(BuildContext context) {
-    final frontal = controller.isFrontFacing ? 'sí' : 'no';
-    final error = controller.lastPoseError;
-    final pose = controller.latestPose;
-    final canvas = controller.lastCanvasSize;
-    final poseAspect = pose.imageHeight == 0
-        ? null
-        : pose.imageWidth / pose.imageHeight;
-    final canvasAspect = canvas == null || canvas.height == 0
-        ? null
-        : canvas.width / canvas.height;
-    final lines = [
-      'frontal: $frontal',
-      'sensor: ${controller.sensorOrientation}° · rot: ${controller.rotationUsed}°',
-      'frames: ${controller.framesProcessed} · con pose: ${controller.framesWithPose}',
-      'pose img: ${pose.imageWidth}x${pose.imageHeight}'
-          '${poseAspect != null ? ' (${poseAspect.toStringAsFixed(3)})' : ''}',
-      'canvas: ${canvas == null ? '?' : '${canvas.width.round()}x${canvas.height.round()}'}'
-          '${canvasAspect != null ? ' (${canvasAspect.toStringAsFixed(3)})' : ''}',
-      if (error != null) 'error: ${error.length > 220 ? error.substring(0, 220) : error}',
-    ];
     return Container(
-      constraints: const BoxConstraints(maxWidth: 320),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(8),
+        color: AppColors.orangeAccent.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(16),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: const Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          for (final line in lines)
-            Text(
-              line,
-              style: TextStyle(
-                color: line.startsWith('error:')
-                    ? Colors.redAccent
-                    : Colors.greenAccent,
-                fontSize: 11,
-              ),
-            ),
+          Icon(Icons.speed_outlined, color: Colors.white, size: 20),
+          SizedBox(width: 8),
+          Text(
+            'Muévete más despacio',
+            style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+/// Mensaje sobre la silueta guía mientras corre el gate de pre-grabación:
+/// "ubícate" mientras se espera alineación, "¡posición correcta!" durante la
+/// cuenta regresiva (el número en sí lo muestra _CountdownBadge, centrado y
+/// grande, aparte de este mensaje). Incluye un botón de salvavidas para
+/// grabar sin esperar, por si la detección no logra confirmar alineación.
+class _PreRecordBanner extends StatelessWidget {
+  const _PreRecordBanner({
+    required this.phase,
+    required this.isAligned,
+    required this.onForceRecord,
+  });
+
+  final _PreRecordPhase phase;
+  final bool isAligned;
+  final VoidCallback onForceRecord;
+
+  @override
+  Widget build(BuildContext context) {
+    final isCountdown = phase == _PreRecordPhase.countdown;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            isCountdown ? '¡Posición correcta!' : 'Ubícate dentro de la silueta',
+            style: TextStyle(
+              color: isAligned ? AppColors.success : Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 6),
+          TextButton(
+            onPressed: onForceRecord,
+            child: const Text(
+              'Grabar sin esperar',
+              style: TextStyle(color: Colors.white70),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Número de cuenta regresiva, grande y centrado en pantalla — mismo
+/// espíritu que el temporizador de una app de cámara.
+class _CountdownBadge extends StatelessWidget {
+  const _CountdownBadge({required this.value});
+
+  final int value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 140,
+      height: 140,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.black.withValues(alpha: 0.55),
+        border: Border.all(color: AppColors.success, width: 4),
+      ),
+      child: Text(
+        '$value',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 88,
+          fontWeight: FontWeight.bold,
+          height: 1,
+        ),
       ),
     );
   }

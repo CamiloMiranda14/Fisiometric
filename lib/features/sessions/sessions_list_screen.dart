@@ -1,9 +1,6 @@
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 
-import '../../models/session_metadata.dart';
+import '../../services/storage/session_loader.dart';
 import '../../services/storage/session_storage_service.dart';
 import '../../theme/app_colors.dart';
 import 'session_detail_screen.dart';
@@ -16,52 +13,63 @@ class SessionsListScreen extends StatefulWidget {
   State<SessionsListScreen> createState() => _SessionsListScreenState();
 }
 
-class _SessionEntry {
-  const _SessionEntry({required this.dir, required this.metadata});
-
-  final Directory dir;
-  final SessionMetadata metadata;
-}
-
 class _SessionsListScreenState extends State<SessionsListScreen> {
   final SessionStorageService _storage = SessionStorageService();
-  late Future<List<_SessionEntry>> _future;
+  late Future<List<SavedSession>> _future;
 
   @override
   void initState() {
     super.initState();
-    _future = _load();
-  }
-
-  Future<List<_SessionEntry>> _load() async {
-    final dirs = await _storage.listSessionDirectories();
-    final entries = <_SessionEntry>[];
-    for (final dir in dirs) {
-      final jsonFile = File('${dir.path}/session.json');
-      if (!await jsonFile.exists()) continue;
-      try {
-        final raw = jsonDecode(await jsonFile.readAsString()) as Map<String, dynamic>;
-        entries.add(_SessionEntry(dir: dir, metadata: SessionMetadata.fromJson(raw)));
-      } catch (_) {
-        // session.json corrupto o incompleto (p.ej. la app se cerró a mitad
-        // de guardar) — se omite en vez de romper toda la lista.
-        continue;
-      }
-    }
-    return entries;
+    _future = loadAllSessions(_storage);
   }
 
   Future<void> _refresh() async {
-    final entries = await _load();
+    final entries = await loadAllSessions(_storage);
     if (!mounted) return;
     setState(() => _future = Future.value(entries));
+  }
+
+  Future<void> _deleteAll() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('¿Eliminar todas las sesiones?'),
+        content: const Text(
+          'Se borrarán todos los videos y datos guardados. Esta acción no '
+          'se puede deshacer.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Eliminar todo', style: TextStyle(color: AppColors.danger)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    await _storage.deleteAllSessions();
+    await _refresh();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Sesiones guardadas')),
-      body: FutureBuilder<List<_SessionEntry>>(
+      appBar: AppBar(
+        title: const Text('Sesiones guardadas'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.delete_sweep_outlined),
+            tooltip: 'Eliminar todas las sesiones',
+            onPressed: _deleteAll,
+          ),
+        ],
+      ),
+      body: FutureBuilder<List<SavedSession>>(
         future: _future,
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {

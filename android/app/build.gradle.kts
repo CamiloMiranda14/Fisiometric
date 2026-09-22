@@ -12,6 +12,10 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // flutter_local_notifications (recordatorio diario) lo exige — usa
+        // APIs de java.time que antes de Android 13 no existen nativamente,
+        // así que hace falta esta "traducción" de la librería de Android.
+        isCoreLibraryDesugaringEnabled = true
     }
 
     defaultConfig {
@@ -40,4 +44,8 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }

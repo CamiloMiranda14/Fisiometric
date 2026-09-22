@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'features/measure/measure_screen.dart';
+import 'features/patient/patient_gate_screen.dart';
 import 'theme/app_theme.dart';
 
 class FisiometricApp extends StatelessWidget {
@@ -12,7 +12,7 @@ class FisiometricApp extends StatelessWidget {
       title: 'Fisiometric',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
-      home: const MeasureScreen(),
+      home: const PatientGateScreen(),
     );
   }
 }

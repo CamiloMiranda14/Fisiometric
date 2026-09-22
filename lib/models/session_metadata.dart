@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../core/pose/body_region.dart';
 import '../core/pose/body_view.dart';
 import 'recording_mode.dart';
 
@@ -30,20 +31,39 @@ class SessionMetadata {
     required this.startedAt,
     required this.mode,
     required this.view,
+    this.region = BodyRegion.fullBody,
     required this.durationMs,
     required this.sampleCount,
     required this.jointStats,
     required this.velocityStats,
-    required this.symmetryStats,
     required this.videoFileName,
+    this.patientName,
+    this.exerciseId,
   });
 
   final String id;
   final DateTime startedAt;
   final RecordingMode mode;
   final BodyView view;
+
+  /// Región del cuerpo medida — determina qué filas de articulación se
+  /// muestran en SessionDetailScreen/SessionResultScreen (ver
+  /// isJointActiveForRegion). `fullBody` para sesiones grabadas antes de
+  /// agregar este campo, o sin un ejercicio específico (Prueba rápida).
+  final BodyRegion region;
+
   final int durationMs;
   final int sampleCount;
+
+  /// Nombre/identificador del paciente, si se ingresó antes de medir — solo
+  /// para poder identificar de quién es cada sesión en la lista, sin
+  /// perfiles ni login. `null`/vacío si no se ingresó ninguno.
+  final String? patientName;
+
+  /// `Exercise.id` del catálogo, si esta sesión vino de ExerciseDemoScreen
+  /// (`null` para "Prueba rápida") — permite asociar la sesión a la
+  /// patología correspondiente en ProgressScreen (ver Pathology.exerciseIds).
+  final String? exerciseId;
 
   /// Clave = `JointDefinition.csvColumn` (hombro_izq, etc.). Una
   /// articulación puede estar ausente si nunca tuvo suficiente confianza
@@ -55,11 +75,6 @@ class SessionMetadata {
   /// que `jointStats`.
   final Map<String, double> velocityStats;
 
-  /// Promedio de simetría bilateral (SI %) por par de articulaciones — ver
-  /// `SessionExporter.computeSymmetryStats`. Vacío fuera de
-  /// `BodyView.frontal`. Clave = `SymmetricPairDefinition.csvColumn`.
-  final Map<String, double> symmetryStats;
-
   final String videoFileName;
 
   Map<String, dynamic> toJson() => {
@@ -67,12 +82,14 @@ class SessionMetadata {
     'startedAt': startedAt.toIso8601String(),
     'mode': mode.name,
     'view': view.name,
+    'region': region.name,
     'durationMs': durationMs,
     'sampleCount': sampleCount,
     'jointStats': jointStats.map((k, v) => MapEntry(k, v.toJson())),
     'velocityStats': velocityStats,
-    'symmetryStats': symmetryStats,
     'videoFileName': videoFileName,
+    if (patientName != null) 'patientName': patientName,
+    if (exerciseId != null) 'exerciseId': exerciseId,
   };
 
   factory SessionMetadata.fromJson(Map<String, dynamic> json) {
@@ -87,16 +104,23 @@ class SessionMetadata {
       view: BodyView.values.byName(
         json['view'] as String? ?? BodyView.frontal.name,
       ),
+      // Sesiones grabadas antes de agregar este campo no tienen esta
+      // clave — se asumen `fullBody` (equivalente a no filtrar, que era el
+      // comportamiento de antes).
+      region: BodyRegion.values.byName(
+        json['region'] as String? ?? BodyRegion.fullBody.name,
+      ),
       durationMs: json['durationMs'] as int,
       sampleCount: json['sampleCount'] as int,
       jointStats: rawStats.map(
         (k, v) => MapEntry(k, JointStats.fromJson(v as Map<String, dynamic>)),
       ),
-      // Sesiones grabadas antes de agregar estos promedios no tienen estas
-      // claves — se asumen vacías (equivalente a "sin datos" en la UI).
+      // Sesiones grabadas antes de agregar este promedio no tienen esta
+      // clave — se asume vacía (equivalente a "sin datos" en la UI).
       velocityStats: _readDoubleMap(json['velocityStats']),
-      symmetryStats: _readDoubleMap(json['symmetryStats']),
       videoFileName: json['videoFileName'] as String? ?? 'video.mp4',
+      patientName: json['patientName'] as String?,
+      exerciseId: json['exerciseId'] as String?,
     );
   }
 

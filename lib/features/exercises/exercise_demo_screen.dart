@@ -3,16 +3,30 @@ import 'package:video_player/video_player.dart';
 
 import '../../models/exercise.dart';
 import '../../theme/app_colors.dart';
-import '../measure/measure_screen.dart';
+import '../measure/measurement_protocol_screen.dart';
 
 /// Muestra el video de demostración de [exercise] en bucle. El botón
 /// "Empezar medición" está disponible en todo momento (no hace falta
 /// esperar a que el video termine) y lleva a MeasureScreen ya con la vista
 /// (frontal/izquierda/derecha) de este ejercicio preconfigurada.
 class ExerciseDemoScreen extends StatefulWidget {
-  const ExerciseDemoScreen({super.key, required this.exercise});
+  const ExerciseDemoScreen({
+    super.key,
+    required this.exercise,
+    required this.videoAssetPath,
+    required this.patientName,
+  });
 
+  /// Ya resuelto por quien navega hasta acá (HomeScreen/ExerciseCatalogScreen)
+  /// — su `view` ajustada al lado real del paciente si es sagital.
   final Exercise exercise;
+
+  /// Cuál de los `exercise.videoAssetPaths` mostrar — también resuelto por
+  /// quien navega hasta acá, según `PatientProfile.affectedSide`.
+  final String videoAssetPath;
+
+  /// Ingresado en PatientGateScreen al abrir la app.
+  final String patientName;
 
   @override
   State<ExerciseDemoScreen> createState() => _ExerciseDemoScreenState();
@@ -25,7 +39,7 @@ class _ExerciseDemoScreenState extends State<ExerciseDemoScreen> {
   @override
   void initState() {
     super.initState();
-    _controller = VideoPlayerController.asset(widget.exercise.videoAssetPath);
+    _controller = VideoPlayerController.asset(widget.videoAssetPath);
     _initFuture = _controller.initialize().then((_) {
       _controller
         ..setLooping(true)
@@ -40,9 +54,15 @@ class _ExerciseDemoScreenState extends State<ExerciseDemoScreen> {
   }
 
   void _startMeasurement() {
-    Navigator.of(context).pushReplacement(
+    Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => MeasureScreen(initialView: widget.exercise.view),
+        builder: (_) => MeasurementProtocolScreen(
+          initialView: widget.exercise.view,
+          region: widget.exercise.region,
+          patientName: widget.patientName,
+          exerciseId: widget.exercise.id,
+          trackedJoints: widget.exercise.trackedJoints,
+        ),
       ),
     );
   }
@@ -85,7 +105,7 @@ class _ExerciseDemoScreenState extends State<ExerciseDemoScreen> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
               child: ElevatedButton(
                 onPressed: _startMeasurement,
                 child: const Text('Empezar medición'),

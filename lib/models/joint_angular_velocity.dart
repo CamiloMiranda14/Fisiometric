@@ -1,6 +1,6 @@
 import '../core/pose/angle_calculator.dart';
 
-/// Velocidad angular de los 8 ángulos articulares en un instante, en °/s.
+/// Velocidad angular de las 10 articulaciones en un instante, en °/s.
 ///
 /// `null` significa que no se pudo calcular (sin frame anterior válido, o
 /// el ángulo actual/anterior de esa articulación era `null`) — no "velocidad
@@ -13,6 +13,8 @@ class JointAngularVelocity {
     required this.codoDer,
     required this.munecaIzq,
     required this.munecaDer,
+    required this.caderaIzq,
+    required this.caderaDer,
     required this.rodillaIzq,
     required this.rodillaDer,
   });
@@ -24,6 +26,8 @@ class JointAngularVelocity {
     codoDer: null,
     munecaIzq: null,
     munecaDer: null,
+    caderaIzq: null,
+    caderaDer: null,
     rodillaIzq: null,
     rodillaDer: null,
   );
@@ -34,6 +38,8 @@ class JointAngularVelocity {
   final double? codoDer;
   final double? munecaIzq;
   final double? munecaDer;
+  final double? caderaIzq;
+  final double? caderaDer;
   final double? rodillaIzq;
   final double? rodillaDer;
 
@@ -51,6 +57,10 @@ class JointAngularVelocity {
         return munecaIzq;
       case JointKind.munecaDer:
         return munecaDer;
+      case JointKind.caderaIzq:
+        return caderaIzq;
+      case JointKind.caderaDer:
+        return caderaDer;
       case JointKind.rodillaIzq:
         return rodillaIzq;
       case JointKind.rodillaDer:
@@ -58,7 +68,7 @@ class JointAngularVelocity {
     }
   }
 
-  /// Mismo orden que las columnas del CSV/Excel — ver SessionExporter.
+  /// Mismo orden que las columnas del CSV — ver SessionExporter.
   List<double?> get asOrderedList => [
     hombroIzq,
     hombroDer,
@@ -66,6 +76,8 @@ class JointAngularVelocity {
     codoDer,
     munecaIzq,
     munecaDer,
+    caderaIzq,
+    caderaDer,
     rodillaIzq,
     rodillaDer,
   ];

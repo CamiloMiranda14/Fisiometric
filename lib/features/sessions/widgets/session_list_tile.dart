@@ -25,12 +25,18 @@ class SessionListTile extends StatelessWidget {
         : Icons.layers_outlined;
     final viewLabel = metadata.view.label;
 
+    final patientName = metadata.patientName;
+
     return ListTile(
       leading: CircleAvatar(
         backgroundColor: AppColors.tealPrimary,
         child: Icon(modeIcon, color: Colors.white),
       ),
-      title: Text(dateLabel),
+      title: Text(
+        patientName == null || patientName.isEmpty
+            ? dateLabel
+            : '$patientName · $dateLabel',
+      ),
       subtitle: Text(
         '$durationLabel · ${metadata.sampleCount} muestras · $modeLabel · $viewLabel',
       ),

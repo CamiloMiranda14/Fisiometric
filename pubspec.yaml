@@ -7,21 +7,56 @@ environment:
   sdk: ^3.12.2
 
 dependencies:
+  # Prende la cámara del teléfono y entrega cada cuadro en vivo — es lo que
+  # se ve de fondo en la pantalla de medición, antes de dibujar el esqueleto
+  # encima.
   camera: ^0.12.0+2
-  excel: ^4.0.6
   flutter:
     sdk: flutter
+  # El "cerebro" de la medición: analiza cada cuadro de cámara y devuelve
+  # los puntos del cuerpo (hombros, codos, caderas, etc. — 33 en total, ver
+  # MediaPipe/BlazePose) con los que se calculan los ángulos. Es una
+  # envoltura de MediaPipe, la tecnología de Google para detectar la pose de
+  # una persona en video.
+  # Programa el recordatorio diario tipo "no has hecho tu medición de hoy"
+  # (ver DailyReminderService) — es lo único que puede mostrar una
+  # notificación real del sistema (aparece aunque la app esté cerrada), no
+  # hay forma de hacerlo con Flutter puro.
+  flutter_local_notifications: ^22.3.1
   flutter_pose_detection: ^0.4.1
+  # Genera el video de "overlay quemado" — la versión donde el esqueleto y
+  # los ángulos quedan dibujados directamente sobre los cuadros del video
+  # guardado (a diferencia del video limpio, sin dibujos).
   flutter_quick_video_encoder: ^1.7.2
+  # Da la carpeta privada del teléfono donde la app guarda cada sesión
+  # (video, CSV, Excel) y el perfil del último paciente — sin esto no
+  # habría dónde escribir esos archivos de forma segura en Android/iOS.
   path_provider: ^2.1.6
+  # Pide permiso de cámara (y almacenamiento si aplica) la primera vez que
+  # la app los necesita, y avisa si el usuario los negó.
   permission_handler: ^13.0.0
+  # El botón "compartir" de una sesión — abre el menú nativo de Android
+  # (WhatsApp, correo, Drive, etc.) para enviar el video/CSV/Excel a otra
+  # persona, p.ej. al fisioterapeuta.
   share_plus: ^13.3.0
+  # Reproduce video dentro de la propia app — se usa tanto para los videos
+  # de demostración de cada ejercicio como para volver a ver una sesión ya
+  # grabada, y para el logo animado de las pantallas de carga.
+  # flutter_local_notifications exige convertir la hora del recordatorio a
+  # un TZDateTime (con zona horaria) para programarlo — sin esto no se
+  # podría usar zonedSchedule.
+  timezone: ^0.11.1
   video_player: ^2.14.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  # Reglas de estilo/errores comunes que revisa `flutter analyze` — no se
+  # incluye en la app, solo ayuda mientras se programa.
   flutter_lints: ^6.0.0
+  # Genera automáticamente el ícono de la app (el de Fisiometric que se ve
+  # en el launcher del teléfono) en todos los tamaños que pide Android/iOS,
+  # a partir de una sola imagen — tampoco se incluye en la app final.
   flutter_launcher_icons: ^0.14.4
 
 # permission_handler_android 14.0.0 solo cambió su compileSdk de 35 a 37 (sin
@@ -39,3 +74,6 @@ flutter:
   assets:
     - assets/icon/
     - assets/exercises/
+    - assets/exercises/recomendados/
+    - assets/guide/
+    - assets/branding/

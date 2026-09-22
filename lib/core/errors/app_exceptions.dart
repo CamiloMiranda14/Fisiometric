@@ -18,7 +18,7 @@ class PoseDetectorInitException implements Exception {
   String toString() => message;
 }
 
-/// Falló la exportación de una sesión (CSV, .xlsx o video).
+/// Falló la exportación de una sesión (CSV o video).
 class ExportException implements Exception {
   const ExportException(this.message);
 

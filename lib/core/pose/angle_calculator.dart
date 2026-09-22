@@ -5,7 +5,7 @@ import 'pose_landmark_type.dart';
 
 /// Confianza mínima para considerar un landmark "visible". Por debajo de
 /// este umbral, cualquier ángulo que lo involucre se reporta como `null`
-/// (celda vacía en CSV/Excel, "—" en el HUD) y el hueso correspondiente no
+/// (celda vacía en el CSV, "—" en el HUD) y el hueso correspondiente no
 /// se dibuja en el esqueleto.
 const double kMinLandmarkVisibility = 0.5;
 
@@ -29,7 +29,7 @@ double angleAtVertex(PoseLandmark a, PoseLandmark vertex, PoseLandmark c) {
   return math.acos(cosAngle) * 180 / math.pi;
 }
 
-/// Identifica cada una de las 8 articulaciones medidas por la app.
+/// Identifica cada una de las 10 articulaciones medidas por la app.
 enum JointKind {
   hombroIzq,
   hombroDer,
@@ -37,13 +37,15 @@ enum JointKind {
   codoDer,
   munecaIzq,
   munecaDer,
+  caderaIzq,
+  caderaDer,
   rodillaIzq,
   rodillaDer,
 }
 
 /// Define un ángulo articular como el triple (puntoA, vértice, puntoC) que
 /// lo forma, más la etiqueta a mostrar en el HUD/esqueleto y la columna
-/// (snake_case) a usar en el CSV/Excel/session.json exportados.
+/// (snake_case) a usar en el CSV/session.json exportados.
 class JointDefinition {
   const JointDefinition({
     required this.kind,
@@ -62,10 +64,18 @@ class JointDefinition {
   final String csvColumn;
 }
 
-/// Las 8 articulaciones medidas. `muneca_*` es una aproximación más burda
+/// Las 10 articulaciones medidas. `muneca_*` es una aproximación más burda
 /// que las otras: BlazePose no tiene un eje de mano real, solo 3 puntos
 /// base de dedos (17-22), así que se usa el landmark de índice como
-/// segundo brazo del ángulo.
+/// segundo brazo del ángulo. `cadera_*` usa el hombro como referencia
+/// proximal (igual que `rodilla_*` usa la cadera) — 180° con el paciente de
+/// pie (hombro-cadera-rodilla casi en línea recta), decreciendo al
+/// flexionar la cadera, misma convención "goniómetro" que codo/rodilla.
+///
+/// Esa es la salida CRUDA de [angleAtVertex] — `JointAngles.fromPoseFrame`
+/// la convierte para todo lo demás (HUD en vivo, esqueleto, CSV exportado,
+/// gráficas) a "0° = extendido, sube con la flexión" para codo/muñeca/
+/// cadera/rodilla, ver el comentario ahí.
 const List<JointDefinition> jointDefinitions = [
   JointDefinition(
     kind: JointKind.hombroIzq,
@@ -116,6 +126,22 @@ const List<JointDefinition> jointDefinitions = [
     csvColumn: 'muneca_der',
   ),
   JointDefinition(
+    kind: JointKind.caderaIzq,
+    a: PoseLandmarkType.leftShoulder,
+    vertex: PoseLandmarkType.leftHip,
+    c: PoseLandmarkType.leftKnee,
+    label: 'Cadera izq.',
+    csvColumn: 'cadera_izq',
+  ),
+  JointDefinition(
+    kind: JointKind.caderaDer,
+    a: PoseLandmarkType.rightShoulder,
+    vertex: PoseLandmarkType.rightHip,
+    c: PoseLandmarkType.rightKnee,
+    label: 'Cadera der.',
+    csvColumn: 'cadera_der',
+  ),
+  JointDefinition(
     kind: JointKind.rodillaIzq,
     a: PoseLandmarkType.leftHip,
     vertex: PoseLandmarkType.leftKnee,
@@ -133,57 +159,17 @@ const List<JointDefinition> jointDefinitions = [
   ),
 ];
 
-/// Identifica cada uno de los 4 pares contralaterales medidos por la app.
-enum SymmetricJointPair { hombro, codo, muneca, rodilla }
-
-/// Define un par de articulaciones (izq/der) para el cálculo de simetría
-/// bilateral, más la etiqueta y columna (snake_case) a usar en HUD/export.
-class SymmetricPairDefinition {
-  const SymmetricPairDefinition({
-    required this.pair,
-    required this.izq,
-    required this.der,
-    required this.label,
-    required this.csvColumn,
-  });
-
-  final SymmetricJointPair pair;
-  final JointKind izq;
-  final JointKind der;
-  final String label;
-  final String csvColumn;
-}
-
-/// Los 4 pares contralaterales, en el mismo orden que sus filas en el HUD.
-const List<SymmetricPairDefinition> symmetricJointPairs = [
-  SymmetricPairDefinition(
-    pair: SymmetricJointPair.hombro,
-    izq: JointKind.hombroIzq,
-    der: JointKind.hombroDer,
-    label: 'Hombro',
-    csvColumn: 'hombro',
-  ),
-  SymmetricPairDefinition(
-    pair: SymmetricJointPair.codo,
-    izq: JointKind.codoIzq,
-    der: JointKind.codoDer,
-    label: 'Codo',
-    csvColumn: 'codo',
-  ),
-  SymmetricPairDefinition(
-    pair: SymmetricJointPair.muneca,
-    izq: JointKind.munecaIzq,
-    der: JointKind.munecaDer,
-    label: 'Muñeca',
-    csvColumn: 'muneca',
-  ),
-  SymmetricPairDefinition(
-    pair: SymmetricJointPair.rodilla,
-    izq: JointKind.rodillaIzq,
-    der: JointKind.rodillaDer,
-    label: 'Rodilla',
-    csvColumn: 'rodilla',
-  ),
+/// Pares izq/der de las 4 articulaciones, en el mismo orden que sus filas
+/// en el HUD (vista frontal). Puramente de layout — ya no implica ningún
+/// cálculo entre lados (ver decisión de quitar la simetría bilateral: la
+/// app ya no evalúa si un ejercicio se ejecutó "correctamente" comparando
+/// lados, sino el progreso de una articulación con movimiento limitado).
+const List<(JointKind, JointKind)> jointPairs = [
+  (JointKind.hombroIzq, JointKind.hombroDer),
+  (JointKind.codoIzq, JointKind.codoDer),
+  (JointKind.munecaIzq, JointKind.munecaDer),
+  (JointKind.caderaIzq, JointKind.caderaDer),
+  (JointKind.rodillaIzq, JointKind.rodillaDer),
 ];
 
 /// Pares de landmarks a dibujar como "huesos" del esqueleto. Incluye más
