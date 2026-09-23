@@ -74,6 +74,24 @@ const List<RecommendedExercise> recommendedExerciseCatalog = [
     videoAssetPath: 'assets/exercises/recomendados/movilidad_articular_cadera.mp4',
   ),
   RecommendedExercise(
+    id: 'abduccion_activa_hombro',
+    name: 'Abducción activa de hombro con peso liviano',
+    description:
+        'De pie, con un peso liviano en la mano (una botella de agua '
+        'sirve), eleva el brazo hacia el lado hasta la altura del hombro y '
+        'bájalo despacio, controlando el movimiento en todo momento. Fase '
+        'avanzada de fortalecimiento activo, con carga — a diferencia de '
+        'los ejercicios de movilización pasiva/asistida de las fases '
+        'iniciales.',
+    videoAssetPath: 'assets/exercises/recomendados/abduccion_activa_hombro.mp4',
+    // El requisito es del MISMO movimiento que este ejercicio progresa
+    // (abducción, con carga) — no de flexión, que es un movimiento
+    // distinto y no dice nada sobre si el paciente ya tiene suficiente
+    // abducción activa/pasiva como para agregarle peso.
+    requirementExerciseId: 'hombro_abduccion_frontal',
+    requirementMinRom: 90,
+  ),
+  RecommendedExercise(
     id: 'movilizacion_pasiva_cadera',
     name: 'Movilización pasiva y activo-asistida de cadera',
     description:

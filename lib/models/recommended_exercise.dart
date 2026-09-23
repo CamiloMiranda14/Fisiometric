@@ -9,10 +9,23 @@ class RecommendedExercise {
     required this.name,
     required this.description,
     required this.videoAssetPath,
+    this.requirementExerciseId,
+    this.requirementMinRom,
   });
 
   final String id;
   final String name;
   final String description;
   final String videoAssetPath;
+
+  /// Si no es `null`, este ejercicio es de fase avanzada y solo se
+  /// desbloquea cuando el paciente ya alcanzó [requirementMinRom]° (misma
+  /// convención "0° = extendido, sube con la flexión" que usa
+  /// `JointAngles.fromPoseFrame`) en alguna sesión guardada del ejercicio de
+  /// medición [requirementExerciseId] (un id de `exerciseCatalog`) — ver
+  /// RecommendedExerciseScreen, que revisa las sesiones del paciente antes
+  /// de dejarlo verlo/empezarlo. `null` en ambos campos significa "sin
+  /// requisito", como todos los ejercicios recomendados hasta ahora.
+  final String? requirementExerciseId;
+  final double? requirementMinRom;
 }

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../models/pathology.dart';
+import '../../services/patient/patient_profile_service.dart';
 import '../../theme/app_colors.dart';
 import 'recommended_exercise_catalog.dart';
 import 'recommended_exercise_screen.dart';
@@ -12,13 +12,13 @@ import 'recommended_exercise_screen.dart';
 /// patología del paciente (ver Pathology.recommendedExerciseIds) aparecen
 /// marcados como recomendados, arriba del resto.
 class RecommendedExerciseCatalogScreen extends StatelessWidget {
-  const RecommendedExerciseCatalogScreen({super.key, required this.pathology});
+  const RecommendedExerciseCatalogScreen({super.key, required this.patientProfile});
 
-  final Pathology pathology;
+  final PatientProfile patientProfile;
 
   @override
   Widget build(BuildContext context) {
-    final recommendedIds = pathology.recommendedExerciseIds.toSet();
+    final recommendedIds = patientProfile.pathology.recommendedExerciseIds.toSet();
     final ordered = [
       ...recommendedExerciseCatalog.where((e) => recommendedIds.contains(e.id)),
       ...recommendedExerciseCatalog.where((e) => !recommendedIds.contains(e.id)),
@@ -48,7 +48,10 @@ class RecommendedExerciseCatalogScreen extends StatelessWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(
-                builder: (_) => RecommendedExerciseScreen(exercise: exercise),
+                builder: (_) => RecommendedExerciseScreen(
+                  exercise: exercise,
+                  patientProfile: patientProfile,
+                ),
               ),
             ),
           );

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/exercise.dart';
+import '../../services/notifications/daily_reminder_service.dart';
 import '../../services/patient/patient_profile_service.dart';
 import '../../theme/app_colors.dart';
 import '../exercises/exercise_catalog.dart';
@@ -31,10 +32,43 @@ enum _MoreMenuItem { quickTest, fullCatalog, savedSessions }
 /// sesiones guardadas) queda detrás del logo/ícono de menú arriba a la
 /// izquierda (el mismo logo de Fisiometric, sin un segundo logo grande
 /// aparte), para que esta pantalla quede especializada solo en lo suyo.
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.patientProfile});
 
   final PatientProfile patientProfile;
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
+  PatientProfile get patientProfile => widget.patientProfile;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // Cubre "recién se confirmó el perfil, esta pantalla se acaba de
+    // crear" — el otro caso (la app ya estaba abierta en Home y solo
+    // vuelve de segundo plano, sin pasar de nuevo por PatientGateScreen)
+    // lo cubre didChangeAppLifecycleState más abajo. Sin esto último, si el
+    // paciente nunca vuelve a "Continuar" en un día, el recordatorio de las
+    // 8pm de ESE día nunca se reprogramaba — quedaba el de un día anterior.
+    DailyReminderService().refresh(patientProfile);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      DailyReminderService().refresh(patientProfile);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -60,9 +94,9 @@ class HomeScreen extends StatelessWidget {
                   PopupMenuButton<_MoreMenuItem>(
                     icon: ClipOval(
                       child: Container(
-                        padding: const EdgeInsets.all(4),
+                        padding: const EdgeInsets.all(8),
                         color: Colors.white,
-                        child: Image.asset('assets/icon/icon.png', width: 26, height: 26),
+                        child: Image.asset('assets/icon/icon.png', width: 40, height: 40),
                       ),
                     ),
                     onSelected: (item) {
@@ -196,7 +230,7 @@ class HomeScreen extends StatelessWidget {
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) =>
-                              RecommendedExerciseCatalogScreen(pathology: patientProfile.pathology),
+                              RecommendedExerciseCatalogScreen(patientProfile: patientProfile),
                         ),
                       ),
                     ),

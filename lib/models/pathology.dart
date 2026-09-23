@@ -49,8 +49,11 @@ enum Pathology {
   /// la fase inicial del protocolo de esta patología (ver
   /// `patologias_objetivo.docx`/`caderas.docx`, sección "Tratamiento").
   List<String> get recommendedExerciseIds => switch (this) {
-    Pathology.fracturaHumero => const ['pendulos_codman'],
-    Pathology.capsulitisAdhesiva => const ['movilizacion_asistida_hombro'],
+    Pathology.fracturaHumero => const ['pendulos_codman', 'abduccion_activa_hombro'],
+    Pathology.capsulitisAdhesiva => const [
+      'movilizacion_asistida_hombro',
+      'abduccion_activa_hombro',
+    ],
     Pathology.fracturaCubitoRadio => const ['movilidad_dedos_muneca'],
     Pathology.reconstruccionLca => const ['extension_activa_rodilla'],
     Pathology.lesionMenisco => const ['flexion_asistida_rodilla'],

@@ -7,8 +7,9 @@ import '../../services/storage/session_loader.dart';
 import '../../services/storage/session_storage_service.dart';
 
 /// Recordatorio diario tipo Duolingo: si a las [_reminderHour] el paciente
-/// registrado todavía no hizo la medición de hoy, le llega una notificación
-/// del sistema (aparece aunque la app esté cerrada).
+/// registrado todavía no hizo TODAS las mediciones que le tocan hoy (ver
+/// `Pathology.exerciseIds` — algunas patologías piden más de una), le
+/// llega una notificación del sistema (aparece aunque la app esté cerrada).
 ///
 /// Es 100% local — la app no tiene servidor (ver arquitectura del
 /// proyecto), así que no hay forma de "avisar de verdad" si el paciente
@@ -65,23 +66,23 @@ class DailyReminderService {
     return await android?.requestNotificationsPermission() ?? true;
   }
 
-  /// Si ya existe una sesión de hoy, del paciente [profile], de un
-  /// ejercicio de su patología — mismo criterio que el calendario de
-  /// ProgressScreen (ver `_ProgressScreenState._load`).
-  Future<bool> _hasDoneTodaysMeasurement(PatientProfile profile) async {
+  /// Si el paciente [profile] ya registró hoy TODAS las mediciones que le
+  /// tocan (ver `Pathology.exerciseIds`) — no basta con una sola: hombro,
+  /// por ejemplo, pide flexión Y abducción, así que hacer solo una de las
+  /// dos todavía debería avisar por la que falta.
+  Future<bool> _hasDoneTodaysMeasurements(PatientProfile profile) async {
     final all = await loadAllSessions(SessionStorageService());
     final now = DateTime.now();
     bool isToday(DateTime d) =>
         d.year == now.year && d.month == now.month && d.day == now.day;
 
-    return all.any((session) {
-      final metadata = session.metadata;
-      final exerciseId = metadata.exerciseId;
-      return metadata.patientName == profile.name &&
-          exerciseId != null &&
-          profile.pathology.exerciseIds.contains(exerciseId) &&
-          isToday(metadata.startedAt);
-    });
+    final doneExerciseIdsToday = all
+        .where((s) => s.metadata.patientName == profile.name && isToday(s.metadata.startedAt))
+        .map((s) => s.metadata.exerciseId)
+        .whereType<String>()
+        .toSet();
+
+    return profile.pathology.exerciseIds.every(doneExerciseIdsToday.contains);
   }
 
   /// Reprograma el recordatorio para [profile] — llamar al confirmar el
@@ -93,7 +94,7 @@ class DailyReminderService {
     final granted = await _requestPermission();
     if (!granted) return;
 
-    final doneToday = await _hasDoneTodaysMeasurement(profile);
+    final doneToday = await _hasDoneTodaysMeasurements(profile);
 
     final now = tz.TZDateTime.now(tz.local);
     var target = tz.TZDateTime(tz.local, now.year, now.month, now.day, _reminderHour);
@@ -104,7 +105,7 @@ class DailyReminderService {
     await _plugin.zonedSchedule(
       id: _reminderNotificationId,
       title: 'Fisiometric',
-      body: '¿Ya hiciste tu medición de hoy, ${profile.name}? Solo toma un par de minutos.',
+      body: '¿Ya hiciste tus mediciones de hoy, ${profile.name}? Solo toma un par de minutos.',
       scheduledDate: target,
       notificationDetails: const NotificationDetails(
         android: AndroidNotificationDetails(
