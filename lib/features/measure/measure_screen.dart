@@ -18,6 +18,7 @@ import '../../services/export/session_exporter.dart';
 import '../../services/notifications/daily_reminder_service.dart';
 import '../../services/patient/patient_profile_service.dart';
 import '../../services/storage/session_storage_service.dart';
+import '../../services/sync/cloud_sync_service.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/widgets/logo_loading_view.dart';
 import '../exercises/exercise_catalog.dart';
@@ -42,6 +43,7 @@ class MeasureScreen extends StatelessWidget {
     this.region = BodyRegion.fullBody,
     this.exerciseId,
     this.trackedJoints,
+    this.therapistMode = false,
   });
 
   /// Vista con la que arranca la medición — normalmente `frontal` (entrada
@@ -70,6 +72,13 @@ class MeasureScreen extends StatelessWidget {
   /// articulaciones").
   final Set<JointKind>? trackedJoints;
 
+  /// `true` cuando graba un fisioterapeuta con cámara trasera (ver
+  /// TherapistModeScreen) en vez del propio paciente con la frontal —
+  /// cambia qué cámara se abre y salta la espera de alineación/cuenta
+  /// regresiva (pensada para que el paciente se ubique solo): acá quien
+  /// sostiene el teléfono ya está viendo la pantalla y encuadrando.
+  final bool therapistMode;
+
   @override
   Widget build(BuildContext context) {
     return PermissionGate(
@@ -79,6 +88,7 @@ class MeasureScreen extends StatelessWidget {
         region: region,
         exerciseId: exerciseId,
         trackedJoints: trackedJoints,
+        therapistMode: therapistMode,
       ),
     );
   }
@@ -91,6 +101,7 @@ class _CameraView extends StatefulWidget {
     required this.region,
     this.exerciseId,
     this.trackedJoints,
+    this.therapistMode = false,
   });
 
   final BodyView initialView;
@@ -98,6 +109,7 @@ class _CameraView extends StatefulWidget {
   final BodyRegion region;
   final String? exerciseId;
   final Set<JointKind>? trackedJoints;
+  final bool therapistMode;
 
   @override
   State<_CameraView> createState() => _CameraViewState();
@@ -165,10 +177,13 @@ class _CameraViewState extends State<_CameraView> with WidgetsBindingObserver {
     // Cámara y detector de pose son independientes entre sí — se inicializan
     // en paralelo para no sumar sus tiempos de arranque.
     final results = await Future.wait([
-      // Cámara frontal por defecto: la idea es que el paciente pueda
-      // colocar y ver el teléfono por sí mismo (uso autónomo, sin que
-      // alguien más tenga que sostenerlo y apuntar con la trasera).
-      _cameraService.initialize(preferredLens: CameraLensDirection.front),
+      // Frontal por defecto: la idea es que el paciente pueda colocar y ver
+      // el teléfono por sí mismo (uso autónomo). En modo fisioterapeuta es
+      // al revés — quien sostiene el teléfono apunta la trasera hacia el
+      // paciente, como con cualquier cámara normal.
+      _cameraService.initialize(
+        preferredLens: widget.therapistMode ? CameraLensDirection.back : CameraLensDirection.front,
+      ),
       _measurementController.initializePoseDetector(),
       loadBodyOutlineImages(),
     ]);
@@ -273,8 +288,15 @@ class _CameraViewState extends State<_CameraView> with WidgetsBindingObserver {
 
   /// Botón principal: si el gate ya está activo, tocarlo de nuevo lo
   /// cancela; si está en reposo, lo arranca (en vez de grabar directo) o
-  /// detiene la grabación en curso — ver _toggleRecording.
+  /// detiene la grabación en curso — ver _toggleRecording. En modo
+  /// fisioterapeuta no hay gate: quien sostiene el teléfono ya está viendo
+  /// la pantalla y encuadrando al paciente, así que graba directo, como
+  /// cualquier botón de grabar/detener normal.
   void _onRecordButtonPressed() {
+    if (widget.therapistMode) {
+      _toggleRecording();
+      return;
+    }
     if (_preRecordPhase != _PreRecordPhase.none) {
       _cancelPreRecordGate();
       return;
@@ -436,7 +458,7 @@ class _CameraViewState extends State<_CameraView> with WidgetsBindingObserver {
     final view = _measurementController.view;
     await _exporter.writeCsv('${dir.path}/datos.csv', samples, view);
 
-    final rawStats = _exporter.computeJointStats(samples);
+    final rawStats = _exporter.computeJointStats(samples, exerciseId: widget.exerciseId);
     final metadata = SessionMetadata(
       id: _sessionId!,
       startedAt: _sessionStartedAt!,
@@ -452,17 +474,32 @@ class _CameraViewState extends State<_CameraView> with WidgetsBindingObserver {
       videoFileName: _videoFileName,
       patientName: widget.patientName,
       exerciseId: widget.exerciseId,
+      unreliableJoints: _exporter.computeUnreliableJoints(samples, exerciseId: widget.exerciseId),
+      plateauedJoints: _exporter.computePlateauedJoints(samples),
+      recordedByTherapist: widget.therapistMode,
+      trackedJoints: _measurementController.trackedJoints,
     );
     await File('${dir.path}/session.json').writeAsString(metadata.toJsonString());
 
-    // No se espera — reprograma el recordatorio diario (ver
-    // DailyReminderService) ahora que hoy ya quedó medido, sin demorar la
-    // navegación a la pantalla de resultados.
-    unawaited(
-      PatientProfileService().loadLast().then((profile) {
-        if (profile != null) DailyReminderService().refresh(profile);
-      }),
-    );
+    // No se espera — respaldo en la nube (ver CloudSyncService), sin
+    // demorar la navegación a la pantalla de resultados por una subida que
+    // hoy ni siquiera existe de verdad (NoopCloudSyncService).
+    unawaited(CloudSyncService.instance.uploadSession(dir, metadata));
+
+    // El recordatorio diario es del seguimiento en casa del propio
+    // paciente — una toma clínica del fisioterapeuta no cuenta para eso
+    // (ni tiene por qué existir un PatientProfile guardado en este
+    // teléfono cuando lo usa el fisioterapeuta).
+    if (!widget.therapistMode) {
+      // No se espera — reprograma el recordatorio diario (ver
+      // DailyReminderService) ahora que hoy ya quedó medido, sin demorar la
+      // navegación a la pantalla de resultados.
+      unawaited(
+        PatientProfileService().loadLast().then((profile) {
+          if (profile != null) DailyReminderService().refresh(profile);
+        }),
+      );
+    }
 
     if (!mounted) return;
     setState(() => _recordState = RecordButtonState.idle);
@@ -490,7 +527,7 @@ class _CameraViewState extends State<_CameraView> with WidgetsBindingObserver {
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-        title: const Text('Fisiometric'),
+        title: Text(widget.therapistMode ? 'Fisiometric: modo fisioterapeuta' : 'Fisiometric'),
         actions: [
           IconButton(
             icon: const Icon(Icons.folder_open_outlined),
@@ -531,6 +568,7 @@ class _CameraViewState extends State<_CameraView> with WidgetsBindingObserver {
             onToggleRecording: _onRecordButtonPressed,
             onForceRecord: _forceStartRecording,
             repaintBoundaryKey: _repaintBoundaryKey,
+            therapistMode: widget.therapistMode,
           );
         },
       ),
@@ -551,6 +589,7 @@ class _MeasureStack extends StatelessWidget {
     required this.onToggleRecording,
     required this.onForceRecord,
     required this.repaintBoundaryKey,
+    this.therapistMode = false,
   });
 
   final CameraController controller;
@@ -564,6 +603,7 @@ class _MeasureStack extends StatelessWidget {
   final VoidCallback onToggleRecording;
   final VoidCallback onForceRecord;
   final GlobalKey repaintBoundaryKey;
+  final bool therapistMode;
 
   bool get _gateActive => preRecordPhase != _PreRecordPhase.none;
   // Los controles se bloquean mientras graba Y mientras corre el gate de
@@ -595,8 +635,13 @@ class _MeasureStack extends StatelessWidget {
                       // paciente se ubique a la distancia correcta. Se
                       // dibuja aparte del esqueleto real (que sigue
                       // corriendo en vivo debajo) para dar retroalimentación
-                      // inmediata de qué tan bien está alineado.
-                      if (recordState == RecordButtonState.idle)
+                      // inmediata de qué tan bien está alineado. No aplica en
+                      // modo fisioterapeuta: ahí no hay gate de alineación
+                      // (ver therapistMode) y el encuadre lo maneja quien
+                      // sostiene el teléfono, guiándose por el esqueleto en
+                      // vivo — mostrar la silueta ahí solo confundiría, ya
+                      // que nunca se pondría en verde.
+                      if (recordState == RecordButtonState.idle && !therapistMode)
                         CustomPaint(
                           painter: PositioningGuidePainter(
                             view: measurementController.view,
@@ -659,16 +704,14 @@ class _MeasureStack extends StatelessWidget {
         // MeasurementController.isMovingTooFast.
         if (recordState == RecordButtonState.recording)
           Positioned(
-            top: 100,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: AnimatedBuilder(
-                animation: measurementController,
-                builder: (context, _) => measurementController.isMovingTooFast
-                    ? const _FastMovementWarning()
-                    : const SizedBox.shrink(),
-              ),
+            top: 90,
+            left: 16,
+            right: 16,
+            child: AnimatedBuilder(
+              animation: measurementController,
+              builder: (context, _) => measurementController.isMovingTooFast
+                  ? const _FastMovementWarning()
+                  : const SizedBox.shrink(),
             ),
           ),
         // Número de cuenta regresiva: aparte del mensaje de arriba y bien
@@ -719,19 +762,31 @@ class _FastMovementWarning extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       decoration: BoxDecoration(
-        color: AppColors.orangeAccent.withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(16),
+        color: AppColors.orangeAccent,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white, width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.35),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: const Row(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.speed_outlined, color: Colors.white, size: 20),
-          SizedBox(width: 8),
-          Text(
-            'Muévete más despacio',
-            style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+          Icon(Icons.speed_outlined, color: Colors.white, size: 30),
+          SizedBox(width: 10),
+          Flexible(
+            child: Text(
+              'Muévete más despacio',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),

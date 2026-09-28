@@ -158,7 +158,7 @@ class _VideoAndDescription extends StatelessWidget {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: const Text(
-                    'Ejercicio recomendado — no se graba ni se evalúa',
+                    'Ejercicio recomendado, no se graba ni se evalúa',
                     style: TextStyle(color: AppColors.tealPrimary, fontSize: 12),
                   ),
                 ),
@@ -211,7 +211,7 @@ class _LockedRequirement extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             Text(
-              'Este es un ejercicio de fase avanzada — se desbloquea cuando '
+              'Este es un ejercicio de fase avanzada, se desbloquea cuando '
               'tu medición registre al menos ${minRom.round()}° de rango.',
               textAlign: TextAlign.center,
               style: TextStyle(color: AppColors.darkGrey.withValues(alpha: 0.75), fontSize: 14),
@@ -230,7 +230,7 @@ class _LockedRequirement extends StatelessWidget {
               )
             else
               Text(
-                'Todavía no tienes ninguna medición registrada — hazla primero '
+                'Todavía no tienes ninguna medición registrada, hazla primero '
                 'desde "Medición del día de hoy".',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: AppColors.darkGrey.withValues(alpha: 0.75), fontSize: 14),

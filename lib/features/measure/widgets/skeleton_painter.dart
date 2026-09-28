@@ -61,14 +61,17 @@ class SkeletonPainter extends CustomPainter {
   final BodyRegion region;
 
   /// Qué articulación(es) mide el ejercicio actual (ver
-  /// `Exercise.trackedJoints`) — cuando son EXCLUSIVAMENTE de cadera, el
-  /// esqueleto se restringe más allá del filtro por región: en vez de todo
-  /// el tren inferior (incluye tobillo/talón/pie y el lado no afectado, y
-  /// hoy además esconde el hombro por error, que sí hace falta para este
-  /// ángulo — ver isLandmarkActiveForRegion), se dibuja solo hombro-cadera-
-  /// rodilla del lado que el detector esté reportando con confianza (ver
-  /// paint()). Para cualquier otro ejercicio (o `null`, p.ej. Prueba
-  /// rápida) el filtro sigue siendo por región/vista, sin cambios.
+  /// `Exercise.trackedJoints`) — dos casos especiales, más allá del filtro
+  /// general por región/vista (ver paint()):
+  /// - EXCLUSIVAMENTE cadera: se dibuja solo hombro-cadera-rodilla-tobillo
+  ///   del lado que el detector esté reportando con confianza, no todo el
+  ///   tren inferior (talón/pie, lado no afectado).
+  /// - EXCLUSIVAMENTE codo: se esconde la cadera (el filtro por región la
+  ///   deja "siempre activa" porque hombro sí la necesita), ya que codo no
+  ///   la usa para nada.
+  ///
+  /// Para cualquier otro ejercicio (o `null`, p.ej. Prueba rápida) el
+  /// filtro sigue siendo por región/vista, sin cambios.
   final Set<JointKind>? trackedJoints;
 
   /// Confirmado en dispositivo: la vista previa de la cámara frontal viene
@@ -114,10 +117,12 @@ class SkeletonPainter extends CustomPainter {
     );
 
     // Cuando el ejercicio mide SOLO cadera, se restringe a hombro-cadera-
-    // rodilla del lado que el detector esté reportando con confianza en
-    // este cuadro — ni el resto del tren inferior (tobillo/talón/pie) ni
-    // el lado no afectado. `null` mientras no haya un lado con confianza
-    // todavía (no se dibuja nada de esto ese cuadro).
+    // rodilla-tobillo del lado que el detector esté reportando con
+    // confianza en este cuadro — ni el resto del tren inferior (talón/pie)
+    // ni el lado no afectado. El tobillo no forma parte del ángulo de
+    // cadera (a=hombro, vertex=cadera, c=rodilla), pero se agrega igual
+    // como referencia visual de toda la pierna. `null` mientras no haya un
+    // lado con confianza todavía (no se dibuja nada de esto ese cuadro).
     final joints = trackedJoints;
     final isCaderaOnly =
         joints != null &&
@@ -130,12 +135,29 @@ class SkeletonPainter extends CustomPainter {
           : (angles.forJoint(JointKind.caderaIzq) != null ? JointKind.caderaIzq : null);
       if (sideKind != null) {
         final def = jointDefinitions.firstWhere((d) => d.kind == sideKind);
-        caderaAllowed = {def.a, def.vertex, def.c};
+        final ankle = sideKind == JointKind.caderaDer
+            ? PoseLandmarkType.rightAnkle
+            : PoseLandmarkType.leftAnkle;
+        caderaAllowed = {def.a, def.vertex, def.c, ankle};
       }
     }
 
+    // Cuando el ejercicio mide SOLO codo, se esconde la cadera — el filtro
+    // por región la deja "siempre activa" porque hombro sí la necesita
+    // (es su punto "a"), pero codo (a=hombro, vertex=codo, c=muñeca) no la
+    // usa para nada; el resto del tren superior (hombro/muñeca/dedos)
+    // sigue igual, solo se excluye la cadera.
+    final isCodoOnly =
+        joints != null &&
+        joints.isNotEmpty &&
+        joints.every((k) => k == JointKind.codoIzq || k == JointKind.codoDer);
+
     bool isActive(PoseLandmarkType type) {
       if (isCaderaOnly) return caderaAllowed?.contains(type) ?? false;
+      if (isCodoOnly &&
+          (type == PoseLandmarkType.leftHip || type == PoseLandmarkType.rightHip)) {
+        return false;
+      }
       return isLandmarkActiveForView(type, view) && isLandmarkActiveForRegion(type, region);
     }
 

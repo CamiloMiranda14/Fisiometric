@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/utils/session_naming.dart';
 import '../../../models/recording_mode.dart';
 import '../../../models/session_metadata.dart';
 import '../../../theme/app_colors.dart';
@@ -12,10 +13,7 @@ class SessionListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final date = metadata.startedAt;
-    String two(int n) => n.toString().padLeft(2, '0');
-    final dateLabel =
-        '${two(date.day)}/${two(date.month)}/${date.year} ${two(date.hour)}:${two(date.minute)}';
+    final dateLabel = formatDateWords(metadata.startedAt);
     final durationLabel = '${(metadata.durationMs / 1000).toStringAsFixed(0)} s';
     final modeLabel = metadata.mode == RecordingMode.clean
         ? 'Video limpio'
@@ -38,7 +36,8 @@ class SessionListTile extends StatelessWidget {
             : '$patientName · $dateLabel',
       ),
       subtitle: Text(
-        '$durationLabel · ${metadata.sampleCount} muestras · $modeLabel · $viewLabel',
+        '$durationLabel · ${metadata.sampleCount} muestras · $modeLabel · $viewLabel'
+        '${metadata.recordedByTherapist ? ' · Fisioterapeuta' : ''}',
       ),
       trailing: const Icon(Icons.chevron_right),
       onTap: onTap,

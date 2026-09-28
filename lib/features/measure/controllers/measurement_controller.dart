@@ -155,13 +155,18 @@ class MeasurementController extends ChangeNotifier {
           if (frame == null) return;
           _framesProcessed++;
           if (frame.hasPose) _framesWithPose++;
+
+          final now = DateTime.now();
+          // Sin suavizado — valor crudo del detector tal cual, para que el
+          // esqueleto y los ángulos se vean en tiempo real sin ningún
+          // retraso (se probó suavizar y no mejoraba la precisión real de
+          // la detección, solo restaba fluidez).
           _latestPose = frame;
           _latestAngles = JointAngles.fromPoseFrame(frame)
               .filterForView(_view)
               .filterForRegion(region)
               .filterForJoints(trackedJoints);
 
-          final now = DateTime.now();
           final previousAngles = _previousAngles;
           final previousFrameTime = _previousFrameTime;
           _latestVelocity = (previousAngles == null || previousFrameTime == null)

@@ -11,7 +11,7 @@ import '../../../theme/app_colors.dart';
 /// [view] y su velocidad angular — se extiende a lo ancho, arriba de la
 /// cámara, en vez de ser una columna angosta a un costado, para no tapar
 /// el cuerpo de la persona en el encuadre. Siempre muestra las mismas
-/// celdas para la vista activa — "—" cuando un valor no está disponible —
+/// celdas para la vista activa ("N/D" cuando un valor no está disponible),
 /// para que el layout nunca "salte" al perderse/recuperarse la detección
 /// de una articulación.
 class AngleHudPanel extends StatelessWidget {
@@ -86,7 +86,7 @@ class _AngleCell extends StatelessWidget {
     final label = jointDefinitions.firstWhere((d) => d.kind == kind).label;
     final angleValue = angles.forJoint(kind);
     final velocityValue = velocity.forJoint(kind);
-    final angleText = angleValue == null ? '—' : '${angleValue.round()}°';
+    final angleText = angleValue == null ? 'N/D' : '${angleValue.round()}°';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

@@ -109,10 +109,30 @@ class MeasurementProtocolScreen extends StatelessWidget {
                             child: _ComparisonCard(
                               good: false,
                               icon: Icons.dry_cleaning_outlined,
-                              label: 'Holgada — tapa las articulaciones',
+                              label: 'Holgada, tapa las articulaciones',
                             ),
                           ),
                         ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    _ProtocolSection(
+                      icon: Icons.trending_up,
+                      title: 'Movimiento',
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        decoration: BoxDecoration(
+                          color: AppColors.tealPrimary.withValues(alpha: 0.06),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Text(
+                          'Lleva la articulación hasta donde más puedas moverla, '
+                          'sin forzar el dolor, y sostén esa posición un par de '
+                          'segundos antes de volver. Así el sistema puede '
+                          'reconocer tu rango máximo real de hoy, no solo un '
+                          'movimiento de paso.',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
                       ),
                     ),
                   ],

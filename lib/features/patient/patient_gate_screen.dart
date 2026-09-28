@@ -8,6 +8,8 @@ import '../../services/notifications/daily_reminder_service.dart';
 import '../../services/patient/patient_profile_service.dart';
 import '../../theme/app_colors.dart';
 import '../home/home_screen.dart';
+import 'reminder_time_picker.dart';
+import 'therapist_mode_screen.dart';
 
 /// Primera pantalla al abrir la app — pide nombre, edad y qué patología
 /// presenta el paciente antes de dejar hacer cualquier otra cosa (no se
@@ -35,6 +37,15 @@ class _PatientGateScreenState extends State<PatientGateScreen> {
   Pathology? _pathology;
   BodyView? _affectedSide;
   bool _loading = true;
+  int _reminderHour = 20;
+  int _reminderMinute = 0;
+
+  /// `true` si nunca se había guardado ningún perfil en este teléfono —
+  /// solo en ese caso se le ofrece elegir la hora del recordatorio al
+  /// terminar (ver [_continue]); si ya existía un perfil, su hora elegida
+  /// se conserva tal cual y se puede cambiar después desde el menú de
+  /// HomeScreen, sin volver a preguntar acá cada vez que abre la app.
+  bool _isFirstEverProfile = false;
 
   @override
   void initState() {
@@ -48,6 +59,10 @@ class _PatientGateScreenState extends State<PatientGateScreen> {
           _ageController.text = '${profile.age}';
           _pathology = profile.pathology;
           _affectedSide = profile.affectedSide;
+          _reminderHour = profile.reminderHour;
+          _reminderMinute = profile.reminderMinute;
+        } else {
+          _isFirstEverProfile = true;
         }
         _loading = false;
       });
@@ -70,17 +85,42 @@ class _PatientGateScreenState extends State<PatientGateScreen> {
       setState(() {});
       return;
     }
-    final profile = PatientProfile(
+    var profile = PatientProfile(
       cedula: _cedulaController.text.trim(),
       name: _nameController.text.trim(),
       age: int.parse(_ageController.text.trim()),
       pathology: _pathology!,
       affectedSide: _affectedSide!,
+      reminderHour: _reminderHour,
+      reminderMinute: _reminderMinute,
     );
     await _service.save(profile);
-    // No se espera — puede pedir permiso de notificaciones (diálogo del
-    // sistema) y no debería demorar la navegación a Home.
-    unawaited(DailyReminderService().refresh(profile));
+
+    if (_isFirstEverProfile) {
+      // Primera vez que se usa este teléfono: pide el permiso de
+      // notificaciones y, si quedó concedido, deja elegir la hora del
+      // recordatorio antes de seguir — no tiene sentido ofrecer el
+      // selector si de todas formas no va a poder recibir nada. También
+      // pide el de "alarmas y recordatorios" (Android 12+): sin este, el
+      // aviso programado nunca suena de verdad (ver DailyReminderService).
+      final granted = await DailyReminderService().requestPermission();
+      if (granted) {
+        await DailyReminderService().requestExactAlarmPermission();
+        if (mounted) {
+          final updated = await pickAndSaveReminderTime(context, profile);
+          if (updated != null) profile = updated;
+        }
+      }
+    } else {
+      // No se espera — ya no hay ningún diálogo de permiso pendiente (ya
+      // se resolvió la primera vez) y no debería demorar la navegación.
+      // El de alarmas exactas se vuelve a pedir por si quedó pendiente de
+      // una versión anterior de la app (antes no se pedía) — si ya está
+      // concedido, esto no hace nada visible.
+      unawaited(DailyReminderService().requestExactAlarmPermission());
+      unawaited(DailyReminderService().refresh(profile));
+    }
+
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => HomeScreen(patientProfile: profile)),
@@ -246,6 +286,21 @@ class _PatientGateScreenState extends State<PatientGateScreen> {
                             ),
                             onPressed: _continue,
                             child: const Text('Continuar'),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        // Entrada aparte para el fisioterapeuta — mide con
+                        // cámara trasera al paciente, no requiere llenar
+                        // este formulario (no es el seguimiento diario en
+                        // casa, ver TherapistModeScreen).
+                        TextButton.icon(
+                          onPressed: () => Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const TherapistModeScreen()),
+                          ),
+                          icon: const Icon(Icons.medical_services_outlined, color: Colors.white70),
+                          label: const Text(
+                            'Modo fisioterapeuta',
+                            style: TextStyle(color: Colors.white70),
                           ),
                         ),
                       ],

@@ -8,6 +8,7 @@ import '../exercises/exercise_catalog.dart';
 import '../exercises/exercise_catalog_screen.dart';
 import '../exercises/exercise_demo_screen.dart';
 import '../exercises/recommended_exercise_catalog_screen.dart';
+import '../patient/settings_screen.dart';
 import '../progress/progress_screen.dart';
 import '../sessions/sessions_list_screen.dart';
 import 'quick_test_view_screen.dart';
@@ -16,7 +17,7 @@ import 'quick_test_view_screen.dart';
 /// del ícono de menú en vez de ocupar espacio en la pantalla principal,
 /// para que esa pantalla quede especializada solo en lo que le toca a este
 /// paciente (ver [HomeScreen]).
-enum _MoreMenuItem { quickTest, fullCatalog, savedSessions }
+enum _MoreMenuItem { quickTest, fullCatalog, savedSessions, settings }
 
 /// Pantalla de inicio: saluda al paciente y lo guía directo hacia el/los
 /// movimiento(s) de medición que le corresponden según la patología
@@ -42,11 +43,13 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
-  PatientProfile get patientProfile => widget.patientProfile;
+  late PatientProfile _profile;
+  PatientProfile get patientProfile => _profile;
 
   @override
   void initState() {
     super.initState();
+    _profile = widget.patientProfile;
     WidgetsBinding.instance.addObserver(this);
     // Cubre "recién se confirmó el perfil, esta pantalla se acaba de
     // crear" — el otro caso (la app ya estaba abierta en Home y solo
@@ -68,6 +71,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       DailyReminderService().refresh(patientProfile);
     }
+  }
+
+  Future<void> _openSettings() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => SettingsScreen(profile: _profile)),
+    );
+    // SettingsScreen guarda cada cambio directo a disco a medida que ocurre
+    // (no al volver) — se relee acá para que el saludo/patología mostrados
+    // arriba queden al día si algo cambió (nombre, patología, etc.).
+    final reloaded = await const PatientProfileService().loadLast();
+    if (reloaded != null && mounted) setState(() => _profile = reloaded);
   }
 
   @override
@@ -121,6 +135,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           Navigator.of(context).push(
                             MaterialPageRoute(builder: (_) => const SessionsListScreen()),
                           );
+                        case _MoreMenuItem.settings:
+                          _openSettings();
                       }
                     },
                     itemBuilder: (context) => const [
@@ -145,6 +161,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         child: ListTile(
                           leading: Icon(Icons.folder_open_outlined),
                           title: Text('Sesiones guardadas'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                      PopupMenuDivider(),
+                      PopupMenuItem(
+                        value: _MoreMenuItem.settings,
+                        child: ListTile(
+                          leading: Icon(Icons.settings_outlined),
+                          title: Text('Configuración'),
                           contentPadding: EdgeInsets.zero,
                         ),
                       ),
@@ -192,7 +217,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'No son ejercicios para repetir — son los movimientos que '
+                      'No son ejercicios para repetir, son los movimientos que '
                       'se registran hoy para seguir tu rango de movimiento.',
                       style: TextStyle(
                         color: AppColors.darkGrey.withValues(alpha: 0.7),
@@ -225,7 +250,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       accentColor: AppColors.orangeAccent,
                       title: 'Ejercicios recomendados',
                       subtitle:
-                          'Ejercicios terapéuticos para tu patología — estos no se '
+                          'Ejercicios terapéuticos para tu patología, estos no se '
                           'graban ni se evalúan, son para repetir por tu cuenta.',
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(

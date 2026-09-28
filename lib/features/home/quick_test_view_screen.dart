@@ -1,44 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../../core/pose/angle_calculator.dart';
-import '../../core/pose/body_region.dart';
 import '../../core/pose/body_view.dart';
 import '../../theme/app_colors.dart';
+import '../measure/joint_choice.dart';
 import '../measure/measurement_protocol_screen.dart';
 import '../measure/widgets/body_view_toggle.dart';
-
-/// Qué articulación medir en la "prueba rápida" — a diferencia del flujo de
-/// ejercicios (donde `Exercise.trackedJoints` ya viene fijo), acá el
-/// paciente la elige él mismo, o "Todas" para no restringir nada (mide y
-/// muestra cualquier articulación que la vista deje ver).
-enum _JointChoice { hombro, codo, muneca, cadera, rodilla, todas }
-
-extension on _JointChoice {
-  String get label => switch (this) {
-    _JointChoice.hombro => 'Hombro',
-    _JointChoice.codo => 'Codo',
-    _JointChoice.muneca => 'Muñeca',
-    _JointChoice.cadera => 'Cadera',
-    _JointChoice.rodilla => 'Rodilla',
-    _JointChoice.todas => 'Todas (cuerpo completo)',
-  };
-
-  /// `null` = no restringe articulaciones (caso "todas").
-  Set<JointKind>? get trackedJoints => switch (this) {
-    _JointChoice.hombro => const {JointKind.hombroIzq, JointKind.hombroDer},
-    _JointChoice.codo => const {JointKind.codoIzq, JointKind.codoDer},
-    _JointChoice.muneca => const {JointKind.munecaIzq, JointKind.munecaDer},
-    _JointChoice.cadera => const {JointKind.caderaIzq, JointKind.caderaDer},
-    _JointChoice.rodilla => const {JointKind.rodillaIzq, JointKind.rodillaDer},
-    _JointChoice.todas => null,
-  };
-
-  BodyRegion get region => switch (this) {
-    _JointChoice.hombro || _JointChoice.codo || _JointChoice.muneca => BodyRegion.upperBody,
-    _JointChoice.cadera || _JointChoice.rodilla => BodyRegion.lowerBody,
-    _JointChoice.todas => BodyRegion.fullBody,
-  };
-}
 
 /// Selección manual de vista y articulación para la "prueba rápida" — a
 /// diferencia del flujo de ejercicios (donde ambas vienen preconfiguradas
@@ -56,7 +22,7 @@ class QuickTestViewScreen extends StatefulWidget {
 
 class _QuickTestViewScreenState extends State<QuickTestViewScreen> {
   BodyView _view = BodyView.frontal;
-  _JointChoice _joint = _JointChoice.todas;
+  JointChoice _joint = JointChoice.todas;
 
   @override
   Widget build(BuildContext context) {
@@ -97,7 +63,7 @@ class _QuickTestViewScreenState extends State<QuickTestViewScreen> {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  for (final choice in _JointChoice.values)
+                  for (final choice in JointChoice.values)
                     ChoiceChip(
                       label: Text(choice.label),
                       selected: _joint == choice,

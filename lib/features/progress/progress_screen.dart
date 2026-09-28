@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../core/pose/angle_calculator.dart';
+import '../../core/utils/session_naming.dart';
 import '../../models/exercise.dart';
 import '../../services/patient/patient_profile_service.dart';
 import '../../services/storage/session_loader.dart';
@@ -69,6 +70,35 @@ class _ProgressData {
 
 DateTime _normalizeDay(DateTime d) => DateTime(d.year, d.month, d.day);
 
+/// Color según qué tan cerca está [current] de [target] — mismo criterio
+/// (rojo/naranja/amarillo/verde) que [_fixedZones], usado para el número
+/// grande de "última sesión" en el termómetro y el arco (un texto sí puede
+/// cambiar de color con los datos; los FONDOS de zona no, ver esa función).
+/// Verde desde que se alcanza o supera el objetivo, no solo al llegar
+/// exacto.
+Color _proximityColor(double current, double target) {
+  if (target <= 0) return AppColors.tealPrimary;
+  final fraction = current / target;
+  if (fraction >= 1.0) return AppColors.success;
+  if (fraction >= 0.75) return AppColors.warning;
+  if (fraction >= 0.5) return AppColors.orangeAccent;
+  return AppColors.danger;
+}
+
+/// Las 4 zonas de color — SIEMPRE las mismas 4 fracciones de [target] (0-
+/// 50% rojo, 50-75% naranja, 75-100% amarillo, 100%+ verde), a diferencia
+/// de antes, donde el color dependía de dónde caían los datos de cada
+/// sesión en particular. Se pintan como fondo fijo en la línea, el
+/// termómetro y el arco — así "zona verde" siempre significa lo mismo sin
+/// importar el paciente ni la sesión; lo único que se mueve sobre ese
+/// fondo fijo es el indicador/línea/aguja de la sesión más reciente.
+List<(double lo, double hi, Color color)> _fixedZones(double target) => [
+  (0.0, 0.5 * target, AppColors.danger),
+  (0.5 * target, 0.75 * target, AppColors.orangeAccent),
+  (0.75 * target, target, AppColors.warning),
+  (target, double.infinity, AppColors.success),
+];
+
 class _ProgressScreenState extends State<ProgressScreen> {
   final _storage = SessionStorageService();
   late Future<_ProgressData> _future;
@@ -85,7 +115,14 @@ class _ProgressScreenState extends State<ProgressScreen> {
     final side = widget.patientProfile.affectedSide;
     final all = await loadAllSessions(_storage);
 
-    final byExercise = <String, List<_ProgressPoint>>{};
+    // Por ejercicio Y por día — si el paciente mide el mismo ejercicio más
+    // de una vez el mismo día, todas esas sesiones se siguen guardando
+    // (ver `sessionsByDay`/calendario/DaySummaryScreen, que las muestra
+    // todas), pero la gráfica de progreso solo toma la ÚLTIMA de ese día
+    // como el punto representativo — si no, 3 mediciones seguidas el mismo
+    // día aparecían como 3 puntos casi pegados, ensuciando la tendencia
+    // sesión a sesión en vez de mostrarla.
+    final byExerciseDay = <String, Map<DateTime, _ProgressPoint>>{};
     final sessionsByDay = <DateTime, List<SavedSession>>{};
     DateTime? firstTrackedDay;
 
@@ -109,16 +146,18 @@ class _ProgressScreenState extends State<ProgressScreen> {
       final stats = metadata.jointStats[def.csvColumn];
       if (stats == null) continue;
 
-      (byExercise[exerciseId] ??= []).add(
-        _ProgressPoint(date: metadata.startedAt, rom: stats.max, session: session),
-      );
+      final dayMap = byExerciseDay[exerciseId] ??= {};
+      final existing = dayMap[day];
+      if (existing == null || metadata.startedAt.isAfter(existing.date)) {
+        dayMap[day] = _ProgressPoint(date: metadata.startedAt, rom: stats.max, session: session);
+      }
     }
 
     final result = <_ExerciseProgress>[];
     for (final exerciseId in pathology.exerciseIds) {
-      final points = byExercise[exerciseId];
-      if (points == null || points.isEmpty) continue;
-      points.sort((a, b) => a.date.compareTo(b.date));
+      final dayMap = byExerciseDay[exerciseId];
+      if (dayMap == null || dayMap.isEmpty) continue;
+      final points = dayMap.values.toList()..sort((a, b) => a.date.compareTo(b.date));
       final exercise = exerciseForId(exerciseId)!;
       result.add(_ExerciseProgress(exercise: exercise, points: points));
     }
@@ -278,7 +317,7 @@ class _ExerciseProgressSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Progreso — ${group.exercise.name}',
+          'Progreso: ${group.exercise.name}',
           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
         ),
         const SizedBox(height: 4),
@@ -324,6 +363,19 @@ class _ExerciseProgressSection extends StatelessWidget {
               ),
             ),
           ),
+        const SizedBox(height: 8),
+        // Leyenda de las 4 zonas fijas — igual en las 3 gráficas (ver
+        // _fixedZones), para no repetir la explicación por cada tipo.
+        const Wrap(
+          spacing: 12,
+          runSpacing: 4,
+          children: [
+            _Legend(color: AppColors.danger, label: 'Lejos de la meta'),
+            _Legend(color: AppColors.orangeAccent, label: 'Avanzando'),
+            _Legend(color: AppColors.warning, label: 'Casi'),
+            _Legend(color: AppColors.success, label: 'Meta alcanzada'),
+          ],
+        ),
         const SizedBox(height: 12),
         for (final point in points.reversed)
           _SessionProgressTile(point: point, onTap: () => onOpenSession(point)),
@@ -359,9 +411,7 @@ class _SessionProgressTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    String two(int n) => n.toString().padLeft(2, '0');
-    final d = point.date;
-    final dateLabel = '${two(d.day)}/${two(d.month)}/${d.year}';
+    final dateLabel = formatDateWords(point.date);
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: const CircleAvatar(
@@ -398,14 +448,17 @@ class _ProgressChartPainter extends CustomPainter {
     final maxY = values.reduce(math.max) * 1.05;
     final rangeY = (maxY - minY).abs() < 1e-6 ? 1.0 : maxY - minY;
 
-    final minX = points.first.date.millisecondsSinceEpoch.toDouble();
-    final lastX = points.last.date.millisecondsSinceEpoch.toDouble();
-    final rawRangeX = lastX - minX;
+    // Eje X por NÚMERO de sesión (0, 1, 2...), no por fecha/hora real — con
+    // fecha, sesiones del mismo día (o de días muy seguidos) quedaban casi
+    // superpuestas entre sí y no se alcanzaba a ver el avance sesión a
+    // sesión. Cada sesión ocupa el mismo espacio sin importar cuánto
+    // tiempo pasó entre una y la siguiente.
+    const minX = 0.0;
+    final lastX = (points.length - 1).toDouble();
     // Deja espacio vacío a la derecha del último punto, a modo de "próximas
     // sesiones" — si no, la línea queda pegada al borde derecho y no se lee
     // como una gráfica que sigue en progreso, sino como un dato cerrado.
-    final weekMs = const Duration(days: 7).inMilliseconds.toDouble();
-    final extension = rawRangeX < weekMs ? weekMs : rawRangeX * 0.35;
+    final extension = math.max(1.0, lastX * 0.35);
     final maxX = lastX + extension;
     final rangeX = maxX - minX;
 
@@ -416,6 +469,22 @@ class _ProgressChartPainter extends CustomPainter {
       _paddingLeft + (x - minX) / rangeX * chartWidth,
       _paddingTop + (1 - (y - minY) / rangeY) * chartHeight,
     );
+
+    // Fondo con las mismas 4 zonas fijas del termómetro/arco (ver
+    // _fixedZones) — para que "zona verde" signifique lo mismo en
+    // cualquiera de las 3 gráficas. Alfa bajo para no tapar la línea ni
+    // las marcas encima.
+    for (final zone in _fixedZones(target)) {
+      final zLo = zone.$1.clamp(minY, maxY);
+      final zHi = (zone.$2.isFinite ? zone.$2 : maxY).clamp(minY, maxY);
+      if (zHi <= zLo) continue;
+      final yTop = toChart(minX, zHi).dy;
+      final yBottom = toChart(minX, zLo).dy;
+      canvas.drawRect(
+        Rect.fromLTRB(_paddingLeft, yTop, _paddingLeft + chartWidth, yBottom),
+        Paint()..color = zone.$3.withValues(alpha: 0.14),
+      );
+    }
 
     final axisPaint = Paint()
       ..color = AppColors.lowConfidence
@@ -471,7 +540,7 @@ class _ProgressChartPainter extends CustomPainter {
 
     final path = Path();
     for (var i = 0; i < points.length; i++) {
-      final p = toChart(points[i].date.millisecondsSinceEpoch.toDouble(), points[i].rom);
+      final p = toChart(i.toDouble(), points[i].rom);
       if (i == 0) {
         path.moveTo(p.dx, p.dy);
       } else {
@@ -480,14 +549,14 @@ class _ProgressChartPainter extends CustomPainter {
     }
     canvas.drawPath(path, linePaint);
     for (var i = 0; i < points.length; i++) {
-      final p = toChart(points[i].date.millisecondsSinceEpoch.toDouble(), points[i].rom);
+      final p = toChart(i.toDouble(), points[i].rom);
       canvas.drawCircle(p, 5, dotPaint);
       canvas.drawCircle(p, 8, dotRingPaint);
     }
 
     // Etiqueta directa solo en el último punto (el más reciente) — no en
     // todos, para no saturar la gráfica.
-    final last = toChart(points.last.date.millisecondsSinceEpoch.toDouble(), points.last.rom);
+    final last = toChart(lastX, points.last.rom);
     _drawLabel(
       canvas,
       '${points.last.rom.round()}°',
@@ -566,10 +635,11 @@ class _ThermometerPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final lo = math.min(baseline, math.min(current, target));
-    final hi = math.max(target, math.max(current, baseline));
-    final range = (hi - lo).abs() < 1e-6 ? 1.0 : hi - lo;
-    double frac(double v) => ((v - lo) / range).clamp(0.0, 1.0);
+    // Eje FIJO (0 a 120% de la meta, o más si algún dato se sale de ahí) —
+    // ya no depende de baseline/current como antes, para que las 4 zonas
+    // de color siempre representen la misma fracción de la meta.
+    final hi = math.max(target * 1.2, math.max(current, baseline) * 1.05);
+    double frac(double v) => (v / hi).clamp(0.0, 1.0);
 
     const tubeWidth = 46.0;
     final bulbRadius = tubeWidth * 0.85;
@@ -579,30 +649,33 @@ class _ThermometerPainter extends CustomPainter {
     final tubeBottom = bulbCenterY - bulbRadius * 0.35;
     final tubeHeight = tubeBottom - tubeTop;
 
-    final trackPaint = Paint()..color = AppColors.lowConfidence.withValues(alpha: 0.18);
-    final fillPaint = Paint()..color = AppColors.tealPrimary;
-
     final tubeRect = RRect.fromRectAndRadius(
       Rect.fromLTRB(cx - tubeWidth / 2, tubeTop, cx + tubeWidth / 2, tubeBottom),
       Radius.circular(tubeWidth / 2),
     );
 
-    // Track + bulbo vacíos primero (color base), luego el relleno recorta
-    // por encima con un clip — evita que el relleno se salga del tubo.
-    canvas.drawRRect(tubeRect, trackPaint);
-    canvas.drawCircle(Offset(cx, bulbCenterY), bulbRadius, trackPaint);
+    // Bulbo: siempre zona roja (representa la base, 0) — no cambia.
+    canvas.drawCircle(Offset(cx, bulbCenterY), bulbRadius, Paint()..color = AppColors.danger);
 
+    // Tubo: las 4 zonas FIJAS de color (ver _fixedZones) — a diferencia de
+    // antes, esto ya no es "relleno hasta el valor actual" en un solo
+    // color: el fondo siempre se ve completo, y lo único que se mueve
+    // sobre él es la línea indicadora de abajo.
     canvas.save();
-    final fillPath = Path()
-      ..addRRect(tubeRect)
-      ..addOval(Rect.fromCircle(center: Offset(cx, bulbCenterY), radius: bulbRadius));
-    canvas.clipPath(fillPath);
-    final fillTopY = tubeBottom - frac(current) * tubeHeight;
-    canvas.drawRect(Rect.fromLTRB(cx - tubeWidth, fillTopY, cx + tubeWidth, size.height), fillPaint);
+    canvas.clipRRect(tubeRect);
+    for (final zone in _fixedZones(target)) {
+      final yBottom = tubeBottom - frac(zone.$1) * tubeHeight;
+      final yTop = tubeBottom - frac(zone.$2.isFinite ? zone.$2 : hi) * tubeHeight;
+      canvas.drawRect(
+        Rect.fromLTRB(cx - tubeWidth, yTop, cx + tubeWidth, yBottom),
+        Paint()..color = zone.$3,
+      );
+    }
     canvas.restore();
 
     // Marcas de referencia (objetivo/primera sesión) — línea punteada
-    // horizontal cruzando el tubo, con su valor al lado.
+    // horizontal cruzando el tubo, con su valor al lado. Colores neutros
+    // (no rojo/naranja/amarillo/verde) para no confundirse con las zonas.
     void drawMarker(double value, Color color, String label, {required bool labelAbove}) {
       final y = tubeBottom - frac(value) * tubeHeight;
       final paint = Paint()
@@ -626,15 +699,38 @@ class _ThermometerPainter extends CustomPainter {
       );
     }
 
-    drawMarker(target, AppColors.success, 'Objetivo\n${target.round()}°', labelAbove: true);
+    drawMarker(target, Colors.black87, 'Objetivo\n${target.round()}°', labelAbove: true);
     drawMarker(baseline, AppColors.lowConfidence, 'Primera sesión\n${baseline.round()}°', labelAbove: false);
+
+    // Indicador de la sesión más reciente — línea sólida blanca con borde
+    // oscuro, para que se vea clara sobre cualquiera de las 4 zonas de
+    // fondo. Es lo ÚNICO que se mueve de una sesión a otra.
+    final markerY = tubeBottom - frac(current) * tubeHeight;
+    final markerStart = Offset(cx - tubeWidth / 2 - 6, markerY);
+    final markerEnd = Offset(cx + tubeWidth / 2 + 6, markerY);
+    canvas.drawLine(
+      markerStart,
+      markerEnd,
+      Paint()
+        ..color = AppColors.tealDark
+        ..strokeWidth = 6
+        ..strokeCap = StrokeCap.round,
+    );
+    canvas.drawLine(
+      markerStart,
+      markerEnd,
+      Paint()
+        ..color = Colors.white
+        ..strokeWidth = 3
+        ..strokeCap = StrokeCap.round,
+    );
 
     // Valor actual, grande, arriba del tubo.
     _drawLabel(
       canvas,
       '${current.round()}°',
       Offset(cx - 20, tubeTop - 30),
-      AppColors.tealPrimary,
+      _proximityColor(current, target),
       22,
       bold: true,
     );
@@ -672,9 +768,10 @@ class _ThermometerPainter extends CustomPainter {
 }
 
 /// Gráfica tipo medidor/protractor (semicírculo), al estilo de los
-/// diagramas de rango de `patologias_objetivo.docx`: un arco de fondo
-/// (rango completo) y un arco relleno hasta el valor logrado en la sesión
-/// más reciente, con marcas para el objetivo clínico y la primera sesión.
+/// diagramas de rango de `patologias_objetivo.docx`: un arco de fondo con
+/// las 4 zonas fijas de color (ver _fixedZones) y una aguja indicando el
+/// valor logrado en la sesión más reciente, con marcas para el objetivo
+/// clínico y la primera sesión.
 class _ArcGaugePainter extends CustomPainter {
   const _ArcGaugePainter({required this.current, required this.baseline, required this.target});
 
@@ -687,10 +784,11 @@ class _ArcGaugePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final lo = math.min(0.0, math.min(baseline, math.min(current, target)));
-    final hi = math.max(target, math.max(current, baseline));
-    final range = (hi - lo).abs() < 1e-6 ? 1.0 : hi - lo;
-    double frac(double v) => ((v - lo) / range).clamp(0.0, 1.0);
+    // Eje FIJO (0 a 120% de la meta, o más si algún dato se sale de ahí) —
+    // ya no depende de baseline/current, para que las 4 zonas de color
+    // siempre representen la misma fracción de la meta (ver _fixedZones).
+    final hi = math.max(target * 1.2, math.max(current, baseline) * 1.05);
+    double frac(double v) => (v / hi).clamp(0.0, 1.0);
 
     final cx = size.width / 2;
     final cy = size.height - 24;
@@ -698,19 +796,27 @@ class _ArcGaugePainter extends CustomPainter {
     final rect = Rect.fromCircle(center: Offset(cx, cy), radius: radius);
 
     const strokeWidth = 20.0;
-    final trackPaint = Paint()
-      ..color = AppColors.lowConfidence.withValues(alpha: 0.2)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.round;
-    canvas.drawArc(rect, _startAngle, _sweepFull, false, trackPaint);
 
-    final fillPaint = Paint()
-      ..color = AppColors.tealPrimary
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.round;
-    canvas.drawArc(rect, _startAngle, _sweepFull * frac(current), false, fillPaint);
+    // Arco de fondo: las 4 zonas FIJAS de color — ya no un solo relleno de
+    // 0 a "current" en un color, sino el fondo completo siempre visible,
+    // con una aguja indicando la posición de la sesión más reciente (ver
+    // abajo) — es lo único que se mueve de una sesión a otra.
+    for (final zone in _fixedZones(target)) {
+      final startFrac = frac(zone.$1);
+      final endFrac = frac(zone.$2.isFinite ? zone.$2 : hi);
+      if (endFrac <= startFrac) continue;
+      canvas.drawArc(
+        rect,
+        _startAngle + _sweepFull * startFrac,
+        _sweepFull * (endFrac - startFrac),
+        false,
+        Paint()
+          ..color = zone.$3
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = strokeWidth
+          ..strokeCap = StrokeCap.butt,
+      );
+    }
 
     void drawTick(double value, Color color, {required bool above}) {
       final angle = _startAngle + _sweepFull * frac(value);
@@ -730,15 +836,49 @@ class _ArcGaugePainter extends CustomPainter {
       _drawLabel(canvas, '${value.round()}°', labelPos, color, 11, bold: false);
     }
 
-    drawTick(target, AppColors.success, above: true);
+    // Colores neutros (no rojo/naranja/amarillo/verde) para no confundirse
+    // con las zonas de fondo.
+    drawTick(target, Colors.black87, above: true);
     drawTick(baseline, AppColors.lowConfidence, above: false);
 
-    // Valor actual, grande, en el centro del arco.
+    // Aguja indicando la sesión más reciente.
+    final needleAngle = _startAngle + _sweepFull * frac(current);
+    final needleOuter = Offset(
+      cx + radius * math.cos(needleAngle),
+      cy + radius * math.sin(needleAngle),
+    );
+    final needleInner = Offset(
+      cx + 12 * math.cos(needleAngle),
+      cy + 12 * math.sin(needleAngle),
+    );
+    canvas.drawLine(
+      needleInner,
+      needleOuter,
+      Paint()
+        ..color = AppColors.tealDark
+        ..strokeWidth = 5
+        ..strokeCap = StrokeCap.round,
+    );
+    canvas.drawCircle(Offset(cx, cy), 7, Paint()..color = AppColors.tealDark);
+    canvas.drawCircle(
+      Offset(cx, cy),
+      7,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2,
+    );
+
+    // Valor actual, grande, en el centro del arco — mismo color que el relleno.
     final currentText = '${current.round()}°';
     final tp = TextPainter(
       text: TextSpan(
         text: currentText,
-        style: const TextStyle(color: AppColors.tealPrimary, fontSize: 26, fontWeight: FontWeight.bold),
+        style: TextStyle(
+          color: _proximityColor(current, target),
+          fontSize: 26,
+          fontWeight: FontWeight.bold,
+        ),
       ),
       textDirection: TextDirection.ltr,
     )..layout();

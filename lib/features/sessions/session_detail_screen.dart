@@ -7,11 +7,13 @@ import 'package:video_player/video_player.dart';
 import '../../core/pose/angle_calculator.dart';
 import '../../core/pose/body_region.dart';
 import '../../core/pose/body_view.dart';
+import '../../core/utils/session_naming.dart';
 import '../../models/recording_mode.dart';
 import '../../models/session_metadata.dart';
 import '../../services/storage/session_storage_service.dart';
 import '../../theme/app_colors.dart';
-import '../exercises/exercise_catalog.dart';
+import '../measure/measure_screen.dart';
+import '../measure/measurement_protocol_screen.dart';
 import 'widgets/friendly_session_summary.dart';
 import 'widgets/movement_chart.dart';
 
@@ -62,12 +64,65 @@ class SessionDetailScreen extends StatelessWidget {
     if (context.mounted) Navigator.pop(context);
   }
 
+  /// Igual que "Repetir" en SessionResultScreen (justo al terminar de
+  /// grabar), pero disponible acá también — a esta pantalla se puede llegar
+  /// tanto desde ahí como volviendo atrás desde la lista de sesiones
+  /// guardadas, con cualquier sesión pasada, no solo la recién grabada.
+  /// Borra esta sesión y manda directo a grabar una nueva con la misma
+  /// vista/región/ejercicio.
+  Future<void> _repeat(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('¿Repetir el ejercicio?'),
+        content: const Text(
+          'Esta medición se va a borrar y vas a grabar una nueva desde cero. '
+          '¿Seguro que quieres repetirla?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Sí, repetir'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    await SessionStorageService().deleteSession(dir);
+    if (!context.mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => metadata.recordedByTherapist
+            ? MeasureScreen(
+                initialView: metadata.view,
+                region: metadata.region,
+                patientName: metadata.patientName,
+                exerciseId: metadata.exerciseId,
+                trackedJoints: metadata.trackedJoints,
+                therapistMode: true,
+              )
+            : MeasurementProtocolScreen(
+                initialView: metadata.view,
+                region: metadata.region,
+                patientName: metadata.patientName ?? '',
+                exerciseId: metadata.exerciseId,
+                trackedJoints: metadata.trackedJoints,
+              ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final modeLabel = metadata.mode == RecordingMode.clean
         ? 'Video limpio'
         : 'Overlay quemado';
-    final trackedJoints = trackedJointsForExerciseId(metadata.exerciseId);
+    final trackedJoints = metadata.trackedJoints;
     bool isActive(JointKind kind) =>
         isJointActiveForView(kind, metadata.view) &&
         isJointActiveForRegion(kind, metadata.region) &&
@@ -75,9 +130,14 @@ class SessionDetailScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(metadata.id),
+        title: Text(formatDateWords(metadata.startedAt)),
         actions: [
           IconButton(icon: const Icon(Icons.share_outlined), onPressed: _share),
+          IconButton(
+            icon: const Icon(Icons.replay),
+            tooltip: 'Repetir medición',
+            onPressed: () => _repeat(context),
+          ),
           IconButton(
             icon: const Icon(Icons.delete_outline),
             onPressed: () => _delete(context),

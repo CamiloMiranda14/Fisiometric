@@ -5,6 +5,17 @@
          mostrar cualquier notificación — ver DailyReminderService, que lo
          pide antes de programar el recordatorio diario. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Recordatorio exacto ("Alarmas y recordatorios") — sin esto Android
+         solo entrega el aviso programado de forma aproximada (puede
+         retrasarse mucho con el ahorro de batería) o directamente no lo
+         entrega en algunos fabricantes. DailyReminderService lo pide en
+         tiempo de ejecución (Android 12+ lo exige explícitamente). -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- Sin esto, reiniciar el celular borra todas las notificaciones
+         programadas (las guarda AlarmManager, que se limpia en cada
+         reinicio) — este permiso + el receiver de más abajo hacen que se
+         vuelvan a programar solas al prender el equipo. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:label="Fisiometric"
@@ -37,6 +48,24 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Estos 3 receivers son los que de verdad disparan (y, tras un
+             reinicio, vuelven a programar) los recordatorios de
+             DailyReminderService — flutter_local_notifications ya NO los
+             agrega solo desde la versión 22, hay que declararlos a mano o
+             `zonedSchedule` nunca entrega nada (justo lo que estaba
+             pasando: el AlarmManager despierta al recibidor a la hora
+             programada, pero como no está declarado, Android no tiene a
+             quién avisarle). -->
+        <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ActionBroadcastReceiver" />
+        <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />
+        <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
+            </intent-filter>
+        </receiver>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

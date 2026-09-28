@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../core/pose/angle_calculator.dart';
 import '../core/pose/body_region.dart';
 import '../core/pose/body_view.dart';
 import 'recording_mode.dart';
@@ -39,6 +40,10 @@ class SessionMetadata {
     required this.videoFileName,
     this.patientName,
     this.exerciseId,
+    this.unreliableJoints = const {},
+    this.plateauedJoints = const {},
+    this.recordedByTherapist = false,
+    this.trackedJoints,
   });
 
   final String id;
@@ -77,6 +82,43 @@ class SessionMetadata {
 
   final String videoFileName;
 
+  /// Columnas (`csvColumn`) donde una parte importante de las lecturas
+  /// crudas superó el límite biomecánico plausible de esa articulación —
+  /// señal de que el detector probablemente perdió el punto real durante
+  /// buena parte de la sesión, ver `SessionExporter.computeUnreliableJoints`.
+  /// Vacío en sesiones grabadas antes de agregar este chequeo.
+  final Set<String> unreliableJoints;
+
+  /// Columnas donde el paciente parece haber sostenido una posición
+  /// cercana a su máximo al final de la sesión (en vez de seguir subiendo
+  /// justo cuando terminó la grabación) — señal de que ese intento sí
+  /// refleja su rango real de ese día, ver
+  /// `SessionExporter.computePlateauedJoints`. Vacío en sesiones grabadas
+  /// antes de agregar este chequeo.
+  final Set<String> plateauedJoints;
+
+  /// `true` si la grabó un fisioterapeuta (cámara trasera, "Modo
+  /// fisioterapeuta") en vez del propio paciente — permite distinguir estas
+  /// mediciones de las de seguimiento diario en casa. `false` en sesiones
+  /// grabadas antes de agregar este modo.
+  final bool recordedByTherapist;
+
+  /// Qué articulación(es) se restringió esta sesión en particular (ver
+  /// `Exercise.trackedJoints` ya ajustado al lado del paciente con
+  /// `forPatientSide`) — `null` sin restricción más allá de región/vista
+  /// ("Prueba rápida: todas", o sesiones grabadas antes de agregar este
+  /// campo).
+  ///
+  /// Se guarda explícito en vez de recalcularlo desde `exerciseId` cada vez
+  /// que hace falta (ver `trackedJointsForExerciseId`) porque ESE ejercicio
+  /// del catálogo no sabe de qué lado es el paciente — recalcularlo así
+  /// devuelve el ejercicio SIN restringir (ambos lados), justo el bug que
+  /// esto corrige: medir cadera derecha mostraba también el cálculo de
+  /// cadera izquierda al repetir la medición, porque "Repetir" reconstruía
+  /// la pantalla de grabación solo con el `exerciseId`, perdiendo la
+  /// restricción de lado ya resuelta la primera vez.
+  final Set<JointKind>? trackedJoints;
+
   Map<String, dynamic> toJson() => {
     'id': id,
     'startedAt': startedAt.toIso8601String(),
@@ -90,6 +132,10 @@ class SessionMetadata {
     'videoFileName': videoFileName,
     if (patientName != null) 'patientName': patientName,
     if (exerciseId != null) 'exerciseId': exerciseId,
+    if (unreliableJoints.isNotEmpty) 'unreliableJoints': unreliableJoints.toList(),
+    if (plateauedJoints.isNotEmpty) 'plateauedJoints': plateauedJoints.toList(),
+    if (recordedByTherapist) 'recordedByTherapist': recordedByTherapist,
+    if (trackedJoints != null) 'trackedJoints': trackedJoints!.map((k) => k.name).toList(),
   };
 
   factory SessionMetadata.fromJson(Map<String, dynamic> json) {
@@ -121,6 +167,14 @@ class SessionMetadata {
       videoFileName: json['videoFileName'] as String? ?? 'video.mp4',
       patientName: json['patientName'] as String?,
       exerciseId: json['exerciseId'] as String?,
+      unreliableJoints:
+          (json['unreliableJoints'] as List<dynamic>?)?.cast<String>().toSet() ?? const {},
+      plateauedJoints:
+          (json['plateauedJoints'] as List<dynamic>?)?.cast<String>().toSet() ?? const {},
+      recordedByTherapist: json['recordedByTherapist'] as bool? ?? false,
+      trackedJoints: (json['trackedJoints'] as List<dynamic>?)
+          ?.map((name) => JointKind.values.byName(name as String))
+          .toSet(),
     );
   }
 

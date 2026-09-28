@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/utils/session_naming.dart';
 import '../../services/storage/session_loader.dart';
 import '../../theme/app_colors.dart';
 import '../exercises/exercise_catalog.dart';
@@ -16,14 +17,9 @@ class DaySummaryScreen extends StatelessWidget {
   final DateTime day;
   final List<SavedSession> sessions;
 
-  static const _monthNames = [
-    'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
-    'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
-  ];
-
   @override
   Widget build(BuildContext context) {
-    final dateLabel = '${day.day} de ${_monthNames[day.month - 1]} de ${day.year}';
+    final dateLabel = formatDateWords(day);
     return Scaffold(
       appBar: AppBar(title: Text(dateLabel)),
       body: ListView(

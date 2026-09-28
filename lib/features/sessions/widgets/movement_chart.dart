@@ -8,7 +8,6 @@ import '../../../core/pose/body_region.dart';
 import '../../../core/pose/body_view.dart';
 import '../../../models/session_metadata.dart';
 import '../../../theme/app_colors.dart';
-import '../../exercises/exercise_catalog.dart';
 
 /// Gráfica del ángulo de una articulación a lo largo de una sesión —
 /// relee `datos.csv` (ya exportado al terminar de grabar/importar), no
@@ -45,7 +44,7 @@ class _MovementChartState extends State<MovementChart> {
     final timeIndex = headers.indexOf('tiempo_ms');
     if (timeIndex == -1) return {};
 
-    final trackedJoints = trackedJointsForExerciseId(widget.metadata.exerciseId);
+    final trackedJoints = widget.metadata.trackedJoints;
     final activeDefs = jointDefinitions.where(
       (d) =>
           isJointActiveForView(d.kind, widget.metadata.view) &&

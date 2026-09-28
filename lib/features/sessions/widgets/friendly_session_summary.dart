@@ -10,7 +10,6 @@ import '../../../models/session_metadata.dart';
 import '../../../services/storage/session_loader.dart';
 import '../../../services/storage/session_storage_service.dart';
 import '../../../theme/app_colors.dart';
-import '../../exercises/exercise_catalog.dart';
 
 /// Resumen de la sesión pensado para que lo lea el propio paciente, no un
 /// profesional: un número grande ("lograste X°"), una barra simple de
@@ -33,6 +32,8 @@ class _JointResult {
     required this.rawMax,
     required this.target,
     required this.previousMax,
+    required this.isUnreliable,
+    required this.didPlateau,
   });
 
   final JointDefinition def;
@@ -43,6 +44,17 @@ class _JointResult {
   final double rawMax;
   final double? target;
   final double? previousMax;
+
+  /// Si `SessionExporter.computeUnreliableJoints` marcó esta articulación —
+  /// buena parte de las lecturas crudas de la sesión superaron el límite
+  /// biomecánico plausible, probable señal de que el detector perdió el
+  /// punto real (ver `plausibilityCeilingFor`).
+  final bool isUnreliable;
+
+  /// Si `SessionExporter.computePlateauedJoints` marcó esta articulación —
+  /// el paciente sostuvo una posición cercana a su máximo al final del
+  /// intento, señal de que ese rango sí refleja su límite real de ese día.
+  final bool didPlateau;
 }
 
 class _FriendlySessionSummaryState extends State<FriendlySessionSummary> {
@@ -56,7 +68,7 @@ class _FriendlySessionSummaryState extends State<FriendlySessionSummary> {
 
   Future<List<_JointResult>> _load() async {
     final metadata = widget.metadata;
-    final trackedJoints = trackedJointsForExerciseId(metadata.exerciseId);
+    final trackedJoints = metadata.trackedJoints;
     final activeDefs = jointDefinitions.where(
       (d) =>
           isJointActiveForView(d.kind, metadata.view) &&
@@ -96,6 +108,8 @@ class _FriendlySessionSummaryState extends State<FriendlySessionSummary> {
           rawMax: stats.max,
           target: target,
           previousMax: previousMax,
+          isUnreliable: metadata.unreliableJoints.contains(def.csvColumn),
+          didPlateau: metadata.plateauedJoints.contains(def.csvColumn),
         ),
       );
     }
@@ -183,6 +197,30 @@ class _FriendlyJointCard extends StatelessWidget {
             result.def.label,
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
           ),
+          if (result.isUnreliable) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.danger.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.warning_amber_rounded, color: AppColors.danger, size: 18),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Esta medición parece tener errores de detección, revisa el '
+                      'video y, si el ejercicio no se ve bien ejecutado, repítela.',
+                      style: TextStyle(color: AppColors.danger, fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 10),
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
@@ -236,6 +274,22 @@ class _FriendlyJointCard extends StatelessWidget {
                 Icon(comparisonIcon, size: 16, color: comparisonColor),
                 const SizedBox(width: 6),
                 Text(comparisonText, style: TextStyle(fontSize: 12, color: comparisonColor)),
+              ],
+            ),
+          ],
+          if (result.didPlateau && !result.isUnreliable) ...[
+            const SizedBox(height: 10),
+            const Row(
+              children: [
+                Icon(Icons.check_circle_outline, size: 16, color: AppColors.success),
+                SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Sostuviste el estiramiento, parece que llegaste a tu límite '
+                    'real de hoy, no solo un movimiento de paso.',
+                    style: TextStyle(fontSize: 12, color: AppColors.success),
+                  ),
+                ),
               ],
             ),
           ],

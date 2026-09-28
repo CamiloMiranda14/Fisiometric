@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -5,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../core/pose/body_view.dart';
 import '../../models/pathology.dart';
+import '../sync/cloud_sync_service.dart';
 
 /// Datos del paciente ingresados en PatientGateScreen al abrir la app —
 /// nombre, edad, qué patología presenta (determina el/los ejercicio(s)
@@ -18,6 +20,9 @@ class PatientProfile {
     required this.age,
     required this.pathology,
     required this.affectedSide,
+    this.reminderHour = 20,
+    this.reminderMinute = 0,
+    this.notificationsEnabled = true,
   });
 
   /// Número de cédula — identifica al paciente de forma inequívoca (el
@@ -30,6 +35,40 @@ class PatientProfile {
   /// Solo `izquierda`/`derecha` — nunca `frontal` (ver el selector en
   /// PatientGateScreen, que solo ofrece esas 2 opciones).
   final BodyView affectedSide;
+
+  /// A qué hora del día quiere el paciente el recordatorio diario (ver
+  /// DailyReminderService) — elegible la primera vez que abre la app,
+  /// justo después de aceptar el permiso de notificaciones (ver
+  /// PatientGateScreen), y cambiable después desde el menú de HomeScreen.
+  /// 8:00 p.m. por defecto, para perfiles guardados antes de agregar esto.
+  final int reminderHour;
+  final int reminderMinute;
+
+  /// Si está en `false`, DailyReminderService no programa ningún aviso
+  /// (cancela los que hubiera pendientes) — el paciente lo desactiva desde
+  /// SettingsScreen. `true` por defecto, también para perfiles guardados
+  /// antes de agregar este interruptor.
+  final bool notificationsEnabled;
+
+  PatientProfile copyWith({
+    String? cedula,
+    String? name,
+    int? age,
+    Pathology? pathology,
+    BodyView? affectedSide,
+    int? reminderHour,
+    int? reminderMinute,
+    bool? notificationsEnabled,
+  }) => PatientProfile(
+    cedula: cedula ?? this.cedula,
+    name: name ?? this.name,
+    age: age ?? this.age,
+    pathology: pathology ?? this.pathology,
+    affectedSide: affectedSide ?? this.affectedSide,
+    reminderHour: reminderHour ?? this.reminderHour,
+    reminderMinute: reminderMinute ?? this.reminderMinute,
+    notificationsEnabled: notificationsEnabled ?? this.notificationsEnabled,
+  );
 }
 
 /// Recuerda el último perfil ingresado — solo como comodidad para
@@ -65,6 +104,14 @@ class PatientProfileService {
       age: age,
       pathology: Pathology.values.byName(pathologyName),
       affectedSide: BodyView.values.byName(sideName),
+      // Perfiles guardados antes de agregar el recordatorio personalizable
+      // no tienen estas claves — se asume 8:00 p.m. (el valor por defecto
+      // de antes de que fuera elegible).
+      reminderHour: data['reminderHour'] as int? ?? 20,
+      reminderMinute: data['reminderMinute'] as int? ?? 0,
+      // Perfiles guardados antes de agregar este interruptor no tienen esta
+      // clave — se asume `true` (las notificaciones ya estaban activas).
+      notificationsEnabled: data['notificationsEnabled'] as bool? ?? true,
     );
   }
 
@@ -77,7 +124,14 @@ class PatientProfileService {
         'age': profile.age,
         'pathology': profile.pathology.name,
         'affectedSide': profile.affectedSide.name,
+        'reminderHour': profile.reminderHour,
+        'reminderMinute': profile.reminderMinute,
+        'notificationsEnabled': profile.notificationsEnabled,
       }),
     );
+    // No se espera — respaldo en la nube (ver CloudSyncService), sin
+    // demorar a quien llama a save() por una subida que hoy ni siquiera
+    // existe de verdad (NoopCloudSyncService).
+    unawaited(CloudSyncService.instance.uploadProfile(profile));
   }
 }

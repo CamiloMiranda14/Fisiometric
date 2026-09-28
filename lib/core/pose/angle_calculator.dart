@@ -159,6 +159,39 @@ const List<JointDefinition> jointDefinitions = [
   ),
 ];
 
+/// Techo plausible (°, ya en la convención "0 = extendido, sube con la
+/// flexión" que entrega `JointAngles.fromPoseFrame` — ver ese comentario)
+/// para cada articulación: por encima de esto, una lectura no representa
+/// un rango de movimiento real por más flexible que sea la persona — casi
+/// siempre es el detector perdiendo el punto real (más común en vista de
+/// perfil, ver PoseFrameSmoother). No son límites clínicos exactos, son
+/// deliberadamente generosos (más allá de lo normal, para no descartar a
+/// alguien genuinamente muy flexible) — solo buscan filtrar lecturas
+/// imposibles, no medir "qué tan flexible es normal".
+///
+/// `cadera` depende del ejercicio: la abducción tiene un techo anatómico
+/// mucho más bajo que la flexión (mismo motivo que `targetRomFor` en
+/// pathology.dart necesita el ejercicio, no solo la articulación).
+double plausibilityCeilingFor(JointKind kind, {String? exerciseId}) {
+  switch (kind) {
+    case JointKind.hombroIzq:
+    case JointKind.hombroDer:
+      return 195;
+    case JointKind.codoIzq:
+    case JointKind.codoDer:
+      return 160;
+    case JointKind.munecaIzq:
+    case JointKind.munecaDer:
+      return 90;
+    case JointKind.caderaIzq:
+    case JointKind.caderaDer:
+      return exerciseId == 'cadera_abduccion_frontal' ? 60 : 150;
+    case JointKind.rodillaIzq:
+    case JointKind.rodillaDer:
+      return 160;
+  }
+}
+
 /// Pares izq/der de las 4 articulaciones, en el mismo orden que sus filas
 /// en el HUD (vista frontal). Puramente de layout — ya no implica ningún
 /// cálculo entre lados (ver decisión de quitar la simetría bilateral: la

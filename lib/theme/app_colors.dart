@@ -19,4 +19,8 @@ abstract final class AppColors {
 
   static const Color success = Color(0xFF2E7D32);
   static const Color danger = Color(0xFFC62828);
+
+  /// Amarillo/ámbar — banda intermedia entre `orangeAccent` y `success` en
+  /// los medidores de "qué tan cerca del objetivo" (ver ProgressScreen).
+  static const Color warning = Color(0xFFF9A825);
 }
