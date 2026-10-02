@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../../core/pose/body_view.dart';
-import '../../theme/app_colors.dart';
-import '../measure/joint_choice.dart';
-import '../measure/measurement_protocol_screen.dart';
-import '../measure/widgets/body_view_toggle.dart';
+import '../../tema/app_colors.dart';
+import '../medicion/joint_choice.dart';
+import '../medicion/measurement_protocol_screen.dart';
+import '../medicion/widgets/body_view_toggle.dart';
 
 /// Selección manual de vista y articulación para la "prueba rápida" — a
 /// diferencia del flujo de ejercicios (donde ambas vienen preconfiguradas

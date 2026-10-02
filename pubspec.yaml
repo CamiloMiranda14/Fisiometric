@@ -46,6 +46,11 @@ dependencies:
   # un TZDateTime (con zona horaria) para programarlo — sin esto no se
   # podría usar zonedSchedule.
   timezone: ^0.11.1
+  # Recorrido guiado con flechas/recuadros sobre los botones reales de
+  # HomeScreen (menú, medición, recomendados, progreso) — se muestra una
+  # sola vez por paciente nuevo, justo después del tutorial de
+  # bienvenida, para enseñar dónde está cada cosa antes de usar la app.
+  tutorial_coach_mark: ^1.2.11
   video_player: ^2.14.0
 
 dev_dependencies:
@@ -77,3 +82,4 @@ flutter:
     - assets/exercises/recomendados/
     - assets/guide/
     - assets/branding/
+    - assets/onboarding/

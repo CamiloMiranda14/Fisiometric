@@ -2,11 +2,11 @@ import 'package:camera/camera.dart' as cam;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_pose_detection/flutter_pose_detection.dart' as mp;
 
-import '../../core/errors/app_exceptions.dart';
+import '../../core/errores/app_exceptions.dart';
 import '../../core/pose/camera_rotation.dart';
 import '../../core/pose/pose_landmark_type.dart';
-import '../../models/pose_frame.dart';
-import '../../models/pose_landmark.dart';
+import '../../modelos/pose_frame.dart';
+import '../../modelos/pose_landmark.dart';
 import 'pose_detection_service.dart';
 
 /// Único archivo del proyecto que importa `flutter_pose_detection`.

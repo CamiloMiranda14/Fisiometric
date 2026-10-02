@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'features/patient/patient_gate_screen.dart';
-import 'theme/app_theme.dart';
+import 'features/paciente/patient_gate_screen.dart';
+import 'tema/app_theme.dart';
 
 class FisiometricApp extends StatelessWidget {
   const FisiometricApp({super.key});

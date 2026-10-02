@@ -1,6 +1,6 @@
 import 'dart:ui';
 
-import '../../models/pose_frame.dart';
+import '../../modelos/pose_frame.dart';
 import 'angle_calculator.dart';
 import 'body_region.dart';
 import 'body_view.dart';

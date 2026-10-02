@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import '../../models/pose_landmark.dart';
+import '../../modelos/pose_landmark.dart';
 import 'pose_landmark_type.dart';
 
 /// Confianza mínima para considerar un landmark "visible". Por debajo de

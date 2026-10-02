@@ -1,6 +1,6 @@
 import 'package:camera/camera.dart';
 
-import '../../models/pose_frame.dart';
+import '../../modelos/pose_frame.dart';
 
 /// Límite de aislamiento del motor de detección de pose.
 ///
@@ -11,7 +11,7 @@ import '../../models/pose_frame.dart';
 abstract class PoseDetectionService {
   /// Carga el modelo. Debe llamarse una vez antes de [processCameraImage].
   ///
-  /// Lanza [PoseDetectorInitException] (ver core/errors) si falla.
+  /// Lanza [PoseDetectorInitException] (ver core/errores) si falla.
   Future<void> initialize();
 
   /// Procesa un frame de cámara y devuelve el resultado.

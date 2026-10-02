@@ -1,5 +1,5 @@
-import '../../models/joint_angles.dart';
-import '../../models/joint_angular_velocity.dart';
+import '../../modelos/joint_angles.dart';
+import '../../modelos/joint_angular_velocity.dart';
 import 'angle_calculator.dart';
 
 /// A partir de cuántos °/s se considera que el paciente está moviendo la
