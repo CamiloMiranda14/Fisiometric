@@ -10,6 +10,7 @@ import '../../core/pose/body_outline_images.dart';
 import '../../core/pose/body_region.dart';
 import '../../core/pose/body_view.dart';
 import '../../core/pose/positioning_alignment.dart';
+import '../../core/utilidades/navegacion.dart';
 import '../../core/utilidades/session_naming.dart';
 import '../../modelos/recording_mode.dart';
 import '../../modelos/session_metadata.dart';
@@ -136,7 +137,9 @@ class _CameraViewState extends State<_CameraView> with WidgetsBindingObserver {
   /// Cuánto debe mantenerse alineado el paciente antes de arrancar la
   /// cuenta regresiva — evita que un roce momentáneo con la silueta
   /// dispare la grabación por accidente.
-  static const Duration _sustainedAlignmentDuration = Duration(milliseconds: 700);
+  static const Duration _sustainedAlignmentDuration = Duration(
+    milliseconds: 700,
+  );
   static const int _countdownStartValue = 3;
 
   final CameraService _cameraService = CameraService();
@@ -182,7 +185,9 @@ class _CameraViewState extends State<_CameraView> with WidgetsBindingObserver {
       // al revés — quien sostiene el teléfono apunta la trasera hacia el
       // paciente, como con cualquier cámara normal.
       _cameraService.initialize(
-        preferredLens: widget.therapistMode ? CameraLensDirection.back : CameraLensDirection.front,
+        preferredLens: widget.therapistMode
+            ? CameraLensDirection.back
+            : CameraLensDirection.front,
       ),
       _measurementController.initializePoseDetector(),
       loadBodyOutlineImages(),
@@ -190,7 +195,8 @@ class _CameraViewState extends State<_CameraView> with WidgetsBindingObserver {
     final controller = results[0] as CameraController;
     _outlineImages = results[2] as BodyOutlineImages;
 
-    _measurementController.sensorOrientation = controller.description.sensorOrientation;
+    _measurementController.sensorOrientation =
+        controller.description.sensorOrientation;
     // Se lee la cámara que efectivamente quedó inicializada (no se asume
     // que "front" siempre esté disponible — CameraService cae a la primera
     // cámara del dispositivo si no hay frontal).
@@ -219,7 +225,8 @@ class _CameraViewState extends State<_CameraView> with WidgetsBindingObserver {
     if (_preRecordPhase == _PreRecordPhase.none) return;
 
     final canvasSize = _measurementController.lastCanvasSize;
-    final aligned = canvasSize != null &&
+    final aligned =
+        canvasSize != null &&
         isAlignedWithGuide(
           frame: _measurementController.latestPose,
           view: _measurementController.view,
@@ -244,7 +251,8 @@ class _CameraViewState extends State<_CameraView> with WidgetsBindingObserver {
       return;
     }
     _alignedSince ??= DateTime.now();
-    if (DateTime.now().difference(_alignedSince!) >= _sustainedAlignmentDuration) {
+    if (DateTime.now().difference(_alignedSince!) >=
+        _sustainedAlignmentDuration) {
       _startCountdown();
     }
   }
@@ -351,7 +359,9 @@ class _CameraViewState extends State<_CameraView> with WidgetsBindingObserver {
           );
         }
       } catch (e) {
-        debugPrint('[Fisiometric] Error al detener grabación en segundo plano: $e');
+        debugPrint(
+          '[Fisiometric] Error al detener grabación en segundo plano: $e',
+        );
         _measurementController.endRecordingSession();
         if (mounted) setState(() => _recordState = RecordButtonState.idle);
       }
@@ -362,14 +372,18 @@ class _CameraViewState extends State<_CameraView> with WidgetsBindingObserver {
     // CPU/batería en inferencia de pose mientras la app no es visible. El
     // modo limpio en curso no se toca: la grabación nativa persiste sola
     // (`enablePersistentRecording`) y solo se pausa el muestreo de ángulos.
-    if (_recordState == RecordButtonState.idle && controller.value.isStreamingImages) {
+    if (_recordState == RecordButtonState.idle &&
+        controller.value.isStreamingImages) {
       await controller.stopImageStream();
     }
   }
 
   Future<void> _handleAppResumed(CameraController controller) async {
-    if (_recordState == RecordButtonState.idle && !controller.value.isStreamingImages) {
-      await controller.startImageStream(_measurementController.handleCameraImage);
+    if (_recordState == RecordButtonState.idle &&
+        !controller.value.isStreamingImages) {
+      await controller.startImageStream(
+        _measurementController.handleCameraImage,
+      );
     }
   }
 
@@ -458,7 +472,10 @@ class _CameraViewState extends State<_CameraView> with WidgetsBindingObserver {
     final view = _measurementController.view;
     await _exporter.writeCsv('${dir.path}/datos.csv', samples, view);
 
-    final rawStats = _exporter.computeJointStats(samples, exerciseId: widget.exerciseId);
+    final rawStats = _exporter.computeJointStats(
+      samples,
+      exerciseId: widget.exerciseId,
+    );
     final metadata = SessionMetadata(
       id: _sessionId!,
       startedAt: _sessionStartedAt!,
@@ -474,12 +491,17 @@ class _CameraViewState extends State<_CameraView> with WidgetsBindingObserver {
       videoFileName: _videoFileName,
       patientName: widget.patientName,
       exerciseId: widget.exerciseId,
-      unreliableJoints: _exporter.computeUnreliableJoints(samples, exerciseId: widget.exerciseId),
+      unreliableJoints: _exporter.computeUnreliableJoints(
+        samples,
+        exerciseId: widget.exerciseId,
+      ),
       plateauedJoints: _exporter.computePlateauedJoints(samples),
       recordedByTherapist: widget.therapistMode,
       trackedJoints: _measurementController.trackedJoints,
     );
-    await File('${dir.path}/session.json').writeAsString(metadata.toJsonString());
+    await File(
+      '${dir.path}/session.json',
+    ).writeAsString(metadata.toJsonString());
 
     // No se espera — respaldo en la nube (ver CloudSyncService), sin
     // demorar la navegación a la pantalla de resultados por una subida que
@@ -503,7 +525,8 @@ class _CameraViewState extends State<_CameraView> with WidgetsBindingObserver {
 
     if (!mounted) return;
     setState(() => _recordState = RecordButtonState.idle);
-    if (kDebugMode && _measurementController.mode == RecordingMode.overlayBurned) {
+    if (kDebugMode &&
+        _measurementController.mode == RecordingMode.overlayBurned) {
       // Diagnóstico temporal (ver overlay_video_recorder.dart): si el video
       // no reproduce, este número dice si el problema es que casi ningún
       // cuadro se logró capturar (revisar lastError) o que sí se capturaron
@@ -518,7 +541,9 @@ class _CameraViewState extends State<_CameraView> with WidgetsBindingObserver {
     // máximo alcanzado) en vez de solo un aviso — desde ahí el paciente
     // elige repetir o ver los resultados completos.
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => SessionResultScreen(dir: dir, metadata: metadata)),
+      MaterialPageRoute(
+        builder: (_) => SessionResultScreen(dir: dir, metadata: metadata),
+      ),
     );
   }
 
@@ -527,22 +552,22 @@ class _CameraViewState extends State<_CameraView> with WidgetsBindingObserver {
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-        title: Text(widget.therapistMode ? 'Fisiometric: modo fisioterapeuta' : 'Fisiometric'),
+        title: Text(
+          widget.therapistMode
+              ? 'Fisiometric: modo fisioterapeuta'
+              : 'Fisiometric',
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.folder_open_outlined),
             tooltip: 'Sesiones guardadas',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const SessionsListScreen()),
-            ),
+            onPressed: () => context.ir(const SessionsListScreen()),
           ),
           IconButton(
             icon: const Icon(Icons.fitness_center_outlined),
             tooltip: 'Ejercicios',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => ExerciseCatalogScreen(patientName: widget.patientName ?? ''),
-              ),
+            onPressed: () => context.ir(
+              ExerciseCatalogScreen(patientName: widget.patientName ?? ''),
             ),
           ),
         ],
@@ -609,7 +634,8 @@ class _MeasureStack extends StatelessWidget {
   // Los controles se bloquean mientras graba Y mientras corre el gate de
   // alineación/cuenta regresiva — no tiene sentido cambiar de vista o modo
   // a mitad de cualquiera de los dos.
-  bool get _controlsLocked => recordState != RecordButtonState.idle || _gateActive;
+  bool get _controlsLocked =>
+      recordState != RecordButtonState.idle || _gateActive;
 
   @override
   Widget build(BuildContext context) {
@@ -641,7 +667,8 @@ class _MeasureStack extends StatelessWidget {
                       // sostiene el teléfono, guiándose por el esqueleto en
                       // vivo — mostrar la silueta ahí solo confundiría, ya
                       // que nunca se pondría en verde.
-                      if (recordState == RecordButtonState.idle && !therapistMode)
+                      if (recordState == RecordButtonState.idle &&
+                          !therapistMode)
                         CustomPaint(
                           painter: PositioningGuidePainter(
                             view: measurementController.view,
@@ -785,7 +812,11 @@ class _FastMovementWarning extends StatelessWidget {
             child: Text(
               'Muévete más despacio',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         ],
@@ -823,7 +854,9 @@ class _PreRecordBanner extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            isCountdown ? '¡Posición correcta!' : 'Ubícate dentro de la silueta',
+            isCountdown
+                ? '¡Posición correcta!'
+                : 'Ubícate dentro de la silueta',
             style: TextStyle(
               color: isAligned ? AppColors.success : Colors.white,
               fontSize: 16,

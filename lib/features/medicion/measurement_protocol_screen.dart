@@ -10,19 +10,20 @@ import 'measure_screen.dart';
 /// `patologias_objetivo.docx`, sección "Toma de datos con FisioMetric" de
 /// cada patología.
 String _cameraDistanceHintFor(String? exerciseId) => switch (exerciseId) {
-  'hombro_flexion_sagital' ||
-  'hombro_abduccion_frontal' => 'A la altura del pecho, entre 2 y 3 metros de distancia.',
-  'codo_flexoextension_sagital' => 'A la altura del codo, a unos 2 metros de distancia.',
+  'hombro_flexion_sagital' || 'hombro_abduccion_frontal' =>
+    'A la altura del pecho, entre 2 y 3 metros de distancia.',
+  'codo_flexoextension_sagital' =>
+    'A la altura del codo, a unos 2 metros de distancia.',
   'rodilla_flexoextension_sagital' =>
     'A la altura de la rodilla, entre 1.5 y 2 metros de distancia.',
   _ => 'A 2-3 metros de distancia, que se vea todo el cuerpo en el encuadre.',
 };
 
 /// Se muestra justo antes de abrir la cámara para grabar una medición —
-/// recuerda las 3 condiciones que más afectan la calidad de la detección
-/// de pose: luz, distancia/altura de la cámara, y ropa. Cada una lleva una
-/// referencia visual (diagrama o comparación ✓/✗) en vez de ser solo texto
-/// — más fácil de captar de un vistazo que un párrafo.
+/// recuerda las condiciones que más afectan la calidad de la detección de
+/// pose: distancia/altura de la cámara, iluminación, fondo y ropa. Cada
+/// una lleva una referencia visual (diagrama o comparación ✓/✗) en vez de
+/// ser solo texto — más fácil de captar de un vistazo que un párrafo.
 class MeasurementProtocolScreen extends StatelessWidget {
   const MeasurementProtocolScreen({
     super.key,
@@ -56,7 +57,9 @@ class MeasurementProtocolScreen extends StatelessWidget {
               const SizedBox(height: 4),
               Text(
                 'Así el sistema detecta mejor tu cuerpo y la medición es más precisa.',
-                style: TextStyle(color: AppColors.darkGrey.withValues(alpha: 0.7)),
+                style: TextStyle(
+                  color: AppColors.darkGrey.withValues(alpha: 0.7),
+                ),
               ),
               const SizedBox(height: 20),
               Expanded(
@@ -65,7 +68,9 @@ class MeasurementProtocolScreen extends StatelessWidget {
                     _ProtocolSection(
                       icon: Icons.social_distance_outlined,
                       title: 'Distancia de la cámara',
-                      child: _DistanceDiagram(hint: _cameraDistanceHintFor(exerciseId)),
+                      child: _DistanceDiagram(
+                        hint: _cameraDistanceHintFor(exerciseId),
+                      ),
                     ),
                     const SizedBox(height: 24),
                     _ProtocolSection(
@@ -86,6 +91,30 @@ class MeasurementProtocolScreen extends StatelessWidget {
                               good: false,
                               icon: Icons.flare_outlined,
                               label: 'Contraluz (ventana o luz detrás)',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    _ProtocolSection(
+                      icon: Icons.wallpaper_outlined,
+                      title: 'Fondo',
+                      child: const Row(
+                        children: [
+                          Expanded(
+                            child: _ComparisonCard(
+                              good: true,
+                              icon: Icons.check_box_outline_blank,
+                              label: 'Pared o fondo liso, sin gente detrás',
+                            ),
+                          ),
+                          SizedBox(width: 10),
+                          Expanded(
+                            child: _ComparisonCard(
+                              good: false,
+                              icon: Icons.groups_outlined,
+                              label: 'Fondo ocupado o con gente moviéndose',
                             ),
                           ),
                         ],
@@ -120,7 +149,10 @@ class MeasurementProtocolScreen extends StatelessWidget {
                       icon: Icons.trending_up,
                       title: 'Movimiento',
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
                         decoration: BoxDecoration(
                           color: AppColors.tealPrimary.withValues(alpha: 0.06),
                           borderRadius: BorderRadius.circular(14),
@@ -164,7 +196,11 @@ class MeasurementProtocolScreen extends StatelessWidget {
 /// Encabezado (ícono + título) común a las 3 secciones, cada una con su
 /// propia referencia visual debajo en vez de un párrafo largo.
 class _ProtocolSection extends StatelessWidget {
-  const _ProtocolSection({required this.icon, required this.title, required this.child});
+  const _ProtocolSection({
+    required this.icon,
+    required this.title,
+    required this.child,
+  });
 
   final IconData icon;
   final String title;
@@ -179,7 +215,10 @@ class _ProtocolSection extends StatelessWidget {
           children: [
             Icon(icon, color: AppColors.tealPrimary, size: 20),
             const SizedBox(width: 8),
-            Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            Text(
+              title,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+            ),
           ],
         ),
         const SizedBox(height: 10),
@@ -213,12 +252,16 @@ class _DistanceDiagram extends StatelessWidget {
             child: Row(
               children: [
                 const Icon(Icons.videocam, color: AppColors.darkGrey, size: 30),
-                Expanded(
-                  child: CustomPaint(painter: _DashedLinePainter()),
-                ),
+                Expanded(child: CustomPaint(painter: _DashedLinePainter())),
                 ColorFiltered(
-                  colorFilter: const ColorFilter.mode(AppColors.tealPrimary, BlendMode.srcIn),
-                  child: Image.asset('assets/guide/frontal_outline.png', height: 90),
+                  colorFilter: const ColorFilter.mode(
+                    AppColors.tealPrimary,
+                    BlendMode.srcIn,
+                  ),
+                  child: Image.asset(
+                    'assets/guide/frontal_outline.png',
+                    height: 90,
+                  ),
                 ),
               ],
             ),
@@ -246,7 +289,11 @@ class _DashedLinePainter extends CustomPainter {
     var x = 0.0;
     final y = size.height / 2;
     while (x < size.width) {
-      canvas.drawLine(Offset(x, y), Offset((x + dash).clamp(0, size.width), y), paint);
+      canvas.drawLine(
+        Offset(x, y),
+        Offset((x + dash).clamp(0, size.width), y),
+        paint,
+      );
       x += dash + gap;
     }
   }
@@ -258,7 +305,11 @@ class _DashedLinePainter extends CustomPainter {
 /// Tarjeta chica "✓ bien" / "✗ evitar" — comparación visual rápida en vez
 /// de un párrafo explicando cada condición.
 class _ComparisonCard extends StatelessWidget {
-  const _ComparisonCard({required this.good, required this.icon, required this.label});
+  const _ComparisonCard({
+    required this.good,
+    required this.icon,
+    required this.label,
+  });
 
   final bool good;
   final IconData icon;
@@ -287,7 +338,11 @@ class _ComparisonCard extends StatelessWidget {
           Text(
             label,
             textAlign: TextAlign.center,
-            style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600),
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ],
       ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:tutorial_coach_mark/tutorial_coach_mark.dart';
 
+import '../../core/utilidades/navegacion.dart';
 import '../../modelos/exercise.dart';
 import '../../modelos/recommended_exercise.dart';
 import '../../services/notificaciones/daily_reminder_service.dart';
@@ -23,12 +24,12 @@ import 'quick_test_view_screen.dart';
 /// del ícono de menú en vez de ocupar espacio en la pantalla principal,
 /// para que esa pantalla quede especializada solo en lo que le toca a este
 /// paciente (ver [HomeScreen]).
-enum _MoreMenuItem {
-  quickTest,
-  fullCatalog,
-  recommendedCatalog,
-  savedSessions,
-  settings,
+enum _ElementoMenu {
+  pruebaRapida,
+  catalogoCompleto,
+  catalogoRecomendados,
+  sesionesGuardadas,
+  configuracion,
 }
 
 /// Pantalla de inicio: saluda al paciente y lo guía directo hacia el/los
@@ -52,7 +53,7 @@ class HomeScreen extends StatefulWidget {
   const HomeScreen({
     super.key,
     required this.patientProfile,
-    this.showCoachMarks = false,
+    this.mostrarRecorridoGuiado = false,
   });
 
   final PatientProfile patientProfile;
@@ -62,7 +63,7 @@ class HomeScreen extends StatefulWidget {
   /// el recorrido guiado que señala con flechas los botones reales (menú,
   /// medición, recomendados, progreso). `false` en cualquier otra entrada
   /// a Home (paciente que ya había visto todo esto antes).
-  final bool showCoachMarks;
+  final bool mostrarRecorridoGuiado;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -78,14 +79,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// el tap: una patología como hombro o cadera pide 2 mediciones, y hecha
   /// una de las dos, la otra tiene que seguir disponible para medir (y la
   /// ya hecha, para repetirla si el paciente quiere).
-  Set<String> _doneExerciseIdsToday = {};
+  Set<String> _idsEjerciciosHechosHoy = {};
 
-  // Puntos de referencia para el recorrido guiado (ver [_showCoachMarks]) —
-  // uno por cada botón/sección que se señala con flechas.
-  final _menuKey = GlobalKey();
-  final _measurementKey = GlobalKey();
-  final _recommendedKey = GlobalKey();
-  final _progressKey = GlobalKey();
+  // Puntos de referencia para el recorrido guiado (ver
+  // [_iniciarRecorridoGuiado]) — uno por cada botón/sección señalado con
+  // flechas.
+  final _claveMenu = GlobalKey();
+  final _claveMedicion = GlobalKey();
+  final _claveRecomendados = GlobalKey();
+  final _claveProgreso = GlobalKey();
 
   @override
   void initState() {
@@ -99,96 +101,104 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // paciente nunca vuelve a "Continuar" en un día, el recordatorio de las
     // 8pm de ESE día nunca se reprogramaba — quedaba el de un día anterior.
     DailyReminderService().refresh(patientProfile);
-    _loadDoneToday();
-    if (widget.showCoachMarks) {
+    _cargarHechosHoy();
+    if (widget.mostrarRecorridoGuiado) {
       // Espera al primer frame: recién ahí los GlobalKey ya tienen una
       // posición real en pantalla para que tutorial_coach_mark pueda
       // calcular dónde dibujar el recorte/flecha de cada uno.
-      WidgetsBinding.instance.addPostFrameCallback((_) => _showCoachMarks());
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _iniciarRecorridoGuiado(),
+      );
     }
   }
 
-  void _showCoachMarks() {
+  void _iniciarRecorridoGuiado() {
     TutorialCoachMark(
       hideSkip: false,
       textSkip: 'Saltar',
       paddingFocus: 6,
       targets: [
-        TargetFocus(
-          identify: 'menu',
-          keyTarget: _menuKey,
-          shape: ShapeLightFocus.Circle,
-          contents: [
-            TargetContent(
-              align: ContentAlign.bottom,
-              child: _CoachMarkText(
-                title: 'Menú',
-                body:
-                    'Acá están tus sesiones guardadas y Configuración: la '
-                    'hora de tu recordatorio diario y tus datos personales '
-                    '(nombre, cédula, edad, patología).',
-              ),
-            ),
-          ],
+        _parada(
+          clave: _claveMenu,
+          forma: ShapeLightFocus.Circle,
+          alinear: ContentAlign.bottom,
+          titulo: 'Menú',
+          texto:
+              'Acá están tus sesiones guardadas y Configuración: la hora '
+              'de tu recordatorio diario y tus datos personales (nombre, '
+              'cédula, edad, patología).',
         ),
-        TargetFocus(
-          identify: 'measurement',
-          keyTarget: _measurementKey,
-          shape: ShapeLightFocus.RRect,
-          radius: 12,
-          contents: [
-            TargetContent(
-              align: ContentAlign.bottom,
-              child: _CoachMarkText(
-                title: 'Medición del día de hoy',
-                body:
-                    'Tócalo para ver el video del fisioterapeuta y el '
-                    'protocolo antes de grabar, luego mide con la cámara. '
-                    'Cuando ya la registraste hoy se pone verde, y igual '
-                    'puedes repetirla cuando quieras.',
-              ),
-            ),
-          ],
+        _parada(
+          clave: _claveMedicion,
+          forma: ShapeLightFocus.RRect,
+          radio: 12,
+          alinear: ContentAlign.bottom,
+          titulo: 'Medición del día de hoy',
+          texto:
+              'Tócalo para ver el video del fisioterapeuta y el protocolo '
+              'antes de grabar, luego mide con la cámara. Cuando ya la '
+              'registraste hoy se pone verde, y igual puedes repetirla '
+              'cuando quieras.',
         ),
-        TargetFocus(
-          identify: 'recommended',
-          keyTarget: _recommendedKey,
-          shape: ShapeLightFocus.RRect,
-          radius: 12,
-          contents: [
-            TargetContent(
-              align: ContentAlign.top,
-              child: _CoachMarkText(
-                title: 'Ejercicios recomendados',
-                body:
-                    'Estos no se graban ni se evalúan, son para que los '
-                    'repitas por tu cuenta en casa.',
-              ),
-            ),
-          ],
+        _parada(
+          clave: _claveRecomendados,
+          forma: ShapeLightFocus.RRect,
+          radio: 12,
+          alinear: ContentAlign.top,
+          titulo: 'Ejercicios recomendados',
+          texto:
+              'Estos no se graban ni se evalúan, son para que los repitas '
+              'por tu cuenta en casa.',
         ),
-        TargetFocus(
-          identify: 'progress',
-          keyTarget: _progressKey,
-          shape: ShapeLightFocus.RRect,
-          radius: 16,
-          contents: [
-            TargetContent(
-              align: ContentAlign.top,
-              child: _CoachMarkText(
-                title: 'Mi progreso',
-                body:
-                    'Un calendario con tu racha de mediciones (y los días '
-                    'que saltaste), y una gráfica que muestra qué tan cerca '
-                    'estás de tu meta clínica en cada ejercicio.',
-              ),
-            ),
-          ],
+        _parada(
+          clave: _claveProgreso,
+          forma: ShapeLightFocus.RRect,
+          radio: 16,
+          alinear: ContentAlign.top,
+          titulo: 'Mi progreso',
+          texto:
+              'Un calendario con tu racha de mediciones (y los días que '
+              'saltaste), y una gráfica que muestra qué tan cerca estás '
+              'de tu meta clínica en cada ejercicio.',
+        ),
+        _parada(
+          clave: _claveMenu,
+          forma: ShapeLightFocus.Circle,
+          alinear: ContentAlign.bottom,
+          titulo: 'Puedes volver a verlo',
+          texto:
+              'Si quieres repetir este recorrido más adelante, entra a '
+              'Configuración desde este menú y toca "Ver tutorial de '
+              'nuevo".',
         ),
       ],
-      beforeFocus: _scrollTargetIntoView,
+      beforeFocus: _desplazarHaciaObjetivo,
       onSkip: () => true,
     ).show(context: context);
+  }
+
+  /// Arma una "parada" del recorrido guiado — las 5 solo cambian el widget
+  /// señalado, la forma del recorte y el texto, así que arman todas con
+  /// esta misma plantilla en vez de repetir TargetFocus/TargetContent.
+  TargetFocus _parada({
+    required GlobalKey clave,
+    required ShapeLightFocus forma,
+    double? radio,
+    required ContentAlign alinear,
+    required String titulo,
+    required String texto,
+  }) {
+    return TargetFocus(
+      keyTarget: clave,
+      shape: forma,
+      radius: radio,
+      contents: [
+        TargetContent(
+          align: alinear,
+          child: _CoachMarkText(title: titulo, body: texto),
+        ),
+      ],
+    );
   }
 
   /// Antes de iluminar cada parada del recorrido, la desplaza a una
@@ -198,7 +208,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// tarjeta real de abajo. `tutorial_coach_mark` no hace scroll solo, así
   /// que hay que adelantárselo acá antes de que lea la posición del
   /// widget (se llama justo antes de eso, ver paquete).
-  Future<void> _scrollTargetIntoView(TargetFocus target) async {
+  Future<void> _desplazarHaciaObjetivo(TargetFocus target) async {
     final ctx = target.keyTarget?.currentContext;
     if (ctx == null || Scrollable.maybeOf(ctx) == null) return;
     await Scrollable.ensureVisible(
@@ -222,11 +232,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       DailyReminderService().refresh(patientProfile);
-      _loadDoneToday();
+      _cargarHechosHoy();
     }
   }
 
-  Future<void> _loadDoneToday() async {
+  Future<void> _cargarHechosHoy() async {
     final all = await loadAllSessions(SessionStorageService());
     final now = DateTime.now();
     bool isToday(DateTime d) =>
@@ -240,18 +250,33 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         .map((s) => s.metadata.exerciseId)
         .whereType<String>()
         .toSet();
-    if (mounted) setState(() => _doneExerciseIdsToday = done);
+    if (mounted) setState(() => _idsEjerciciosHechosHoy = done);
   }
 
-  Future<void> _openSettings() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => SettingsScreen(profile: _profile)),
-    );
+  Future<void> _abrirConfiguracion() async {
+    await context.ir(SettingsScreen(profile: _profile));
     // SettingsScreen guarda cada cambio directo a disco a medida que ocurre
     // (no al volver) — se relee acá para que el saludo/patología mostrados
     // arriba queden al día si algo cambió (nombre, patología, etc.).
     final reloaded = await const PatientProfileService().loadLast();
     if (reloaded != null && mounted) setState(() => _profile = reloaded);
+  }
+
+  /// Una fila del menú de arriba a la izquierda — ícono + texto, ligados
+  /// al valor del enum que después decide qué pantalla abrir.
+  PopupMenuItem<_ElementoMenu> _itemMenu(
+    _ElementoMenu valor,
+    IconData icono,
+    String texto,
+  ) {
+    return PopupMenuItem(
+      value: valor,
+      child: ListTile(
+        leading: Icon(icono),
+        title: Text(texto),
+        contentPadding: EdgeInsets.zero,
+      ),
+    );
   }
 
   @override
@@ -278,8 +303,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
               child: Row(
                 children: [
-                  PopupMenuButton<_MoreMenuItem>(
-                    key: _menuKey,
+                  PopupMenuButton<_ElementoMenu>(
+                    key: _claveMenu,
                     icon: ClipOval(
                       child: Container(
                         padding: const EdgeInsets.all(8),
@@ -293,82 +318,57 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ),
                     onSelected: (item) {
                       switch (item) {
-                        case _MoreMenuItem.quickTest:
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => QuickTestViewScreen(
-                                patientName: patientProfile.name,
-                              ),
+                        case _ElementoMenu.pruebaRapida:
+                          context.ir(
+                            QuickTestViewScreen(
+                              patientName: patientProfile.name,
                             ),
                           );
-                        case _MoreMenuItem.fullCatalog:
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => ExerciseCatalogScreen(
-                                patientName: patientProfile.name,
-                                affectedSide: patientProfile.affectedSide,
-                              ),
+                        case _ElementoMenu.catalogoCompleto:
+                          context.ir(
+                            ExerciseCatalogScreen(
+                              patientName: patientProfile.name,
+                              affectedSide: patientProfile.affectedSide,
                             ),
                           );
-                        case _MoreMenuItem.recommendedCatalog:
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => RecommendedExerciseCatalogScreen(
-                                patientProfile: patientProfile,
-                              ),
+                        case _ElementoMenu.catalogoRecomendados:
+                          context.ir(
+                            RecommendedExerciseCatalogScreen(
+                              patientProfile: patientProfile,
                             ),
                           );
-                        case _MoreMenuItem.savedSessions:
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => const SessionsListScreen(),
-                            ),
-                          );
-                        case _MoreMenuItem.settings:
-                          _openSettings();
+                        case _ElementoMenu.sesionesGuardadas:
+                          context.ir(const SessionsListScreen());
+                        case _ElementoMenu.configuracion:
+                          _abrirConfiguracion();
                       }
                     },
-                    itemBuilder: (context) => const [
-                      PopupMenuItem(
-                        value: _MoreMenuItem.quickTest,
-                        child: ListTile(
-                          leading: Icon(Icons.speed_outlined),
-                          title: Text('Prueba rápida'),
-                          contentPadding: EdgeInsets.zero,
-                        ),
+                    itemBuilder: (context) => [
+                      _itemMenu(
+                        _ElementoMenu.pruebaRapida,
+                        Icons.speed_outlined,
+                        'Prueba rápida',
                       ),
-                      PopupMenuItem(
-                        value: _MoreMenuItem.fullCatalog,
-                        child: ListTile(
-                          leading: Icon(Icons.fitness_center_outlined),
-                          title: Text('Catálogo completo'),
-                          contentPadding: EdgeInsets.zero,
-                        ),
+                      _itemMenu(
+                        _ElementoMenu.catalogoCompleto,
+                        Icons.fitness_center_outlined,
+                        'Catálogo completo',
                       ),
-                      PopupMenuItem(
-                        value: _MoreMenuItem.recommendedCatalog,
-                        child: ListTile(
-                          leading: Icon(Icons.self_improvement_outlined),
-                          title: Text('Todos los recomendados'),
-                          contentPadding: EdgeInsets.zero,
-                        ),
+                      _itemMenu(
+                        _ElementoMenu.catalogoRecomendados,
+                        Icons.self_improvement_outlined,
+                        'Todos los recomendados',
                       ),
-                      PopupMenuItem(
-                        value: _MoreMenuItem.savedSessions,
-                        child: ListTile(
-                          leading: Icon(Icons.folder_open_outlined),
-                          title: Text('Sesiones guardadas'),
-                          contentPadding: EdgeInsets.zero,
-                        ),
+                      _itemMenu(
+                        _ElementoMenu.sesionesGuardadas,
+                        Icons.folder_open_outlined,
+                        'Sesiones guardadas',
                       ),
-                      PopupMenuDivider(),
-                      PopupMenuItem(
-                        value: _MoreMenuItem.settings,
-                        child: ListTile(
-                          leading: Icon(Icons.settings_outlined),
-                          title: Text('Configuración'),
-                          contentPadding: EdgeInsets.zero,
-                        ),
+                      const PopupMenuDivider(),
+                      _itemMenu(
+                        _ElementoMenu.configuracion,
+                        Icons.settings_outlined,
+                        'Configuración',
                       ),
                     ],
                   ),
@@ -409,7 +409,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   padding: const EdgeInsets.all(20),
                   children: [
                     Column(
-                      key: _measurementKey,
+                      key: _claveMedicion,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         const Text(
@@ -432,26 +432,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         for (final exercise in todaysMeasurements) ...[
                           _TodaysMeasurementCard(
                             exercise: exercise,
-                            isDoneToday: _doneExerciseIdsToday.contains(
+                            isDoneToday: _idsEjerciciosHechosHoy.contains(
                               exercise.id,
                             ),
-                            onTap: () => Navigator.of(context)
-                                .push(
-                                  MaterialPageRoute(
-                                    builder: (_) => ExerciseDemoScreen(
-                                      exercise: exercise,
-                                      videoAssetPath: exercise
-                                          .videoAssetPathFor(
-                                            patientProfile.affectedSide,
-                                          ),
-                                      patientName: patientProfile.name,
+                            onTap: () => context
+                                .ir(
+                                  ExerciseDemoScreen(
+                                    exercise: exercise,
+                                    videoAssetPath: exercise.videoAssetPathFor(
+                                      patientProfile.affectedSide,
                                     ),
+                                    patientName: patientProfile.name,
                                   ),
                                 )
                                 // Por si vuelve acá sin pasar por "Volver al
                                 // inicio" (que ya recrea HomeScreen de cero) —
                                 // por ejemplo, con el botón atrás tras guardar.
-                                .then((_) => _loadDoneToday()),
+                                .then((_) => _cargarHechosHoy()),
                           ),
                           const SizedBox(height: 14),
                         ],
@@ -461,7 +458,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     const Divider(),
                     const SizedBox(height: 12),
                     Column(
-                      key: _recommendedKey,
+                      key: _claveRecomendados,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         const Text(
@@ -493,12 +490,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               Expanded(
                                 child: _RecommendedExerciseCard(
                                   exercise: recommendedForYou[i],
-                                  onTap: () => Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (_) => RecommendedExerciseScreen(
-                                        exercise: recommendedForYou[i],
-                                        patientProfile: patientProfile,
-                                      ),
+                                  onTap: () => context.ir(
+                                    RecommendedExerciseScreen(
+                                      exercise: recommendedForYou[i],
+                                      patientProfile: patientProfile,
                                     ),
                                   ),
                                 ),
@@ -510,18 +505,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ),
                     const SizedBox(height: 16),
                     _HomeOptionCard(
-                      key: _progressKey,
+                      key: _claveProgreso,
                       icon: Icons.show_chart_outlined,
                       accentColor: AppColors.tealPrimary,
                       title: 'Mi progreso',
                       subtitle:
                           'Cómo ha ido cambiando tu rango de movimiento sesión '
                           'a sesión, y el detalle de cada medición realizada.',
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              ProgressScreen(patientProfile: patientProfile),
-                        ),
+                      onTap: () => context.ir(
+                        ProgressScreen(patientProfile: patientProfile),
                       ),
                     ),
                   ],
@@ -784,8 +776,9 @@ class _HomeOptionCard extends StatelessWidget {
   }
 }
 
-/// Burbuja de texto del recorrido guiado (ver [_HomeScreenState._showCoachMarks])
-/// — mismo estilo en las 4 paradas, solo cambia título/cuerpo.
+/// Burbuja de texto del recorrido guiado (ver
+/// [_HomeScreenState._iniciarRecorridoGuiado]) — mismo estilo en las 4
+/// paradas, solo cambia título/cuerpo.
 class _CoachMarkText extends StatelessWidget {
   const _CoachMarkText({required this.title, required this.body});
 
